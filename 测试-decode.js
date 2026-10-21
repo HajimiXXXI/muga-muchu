@@ -1,5 +1,16 @@
 const fs = require('fs'), vm = require('vm');
-const P = process.env.HOME + '/SillyTavern/public/scripts/extensions/third-party/muga-muchu/index.js';
+const path = require('path');
+const CANDIDATES = [
+  process.env.MUGA_INDEX,
+  path.join(__dirname, 'index.js'),
+  path.join(__dirname, '..', 'muga-muchu', 'index.js'),
+  process.env.HOME + '/SillyTavern/public/scripts/extensions/third-party/muga-muchu/index.js',
+].filter(Boolean);
+const P = CANDIDATES.filter((p) => { try { return fs.existsSync(p); } catch (e) { return false; } })[0];
+if (!P) {
+  console.error('找不到 index.js。请把本脚本放在插件目录里跑，或设置 MUGA_INDEX 指向 index.js。');
+  process.exit(2);
+}
 const src = fs.readFileSync(P, 'utf8');
 function load(settings, chat) {
   const calls = { update: 0, save: 0 };
