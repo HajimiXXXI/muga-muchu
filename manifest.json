@@ -1,0 +1,14 @@
+{
+  "display_name": "无我梦中 · Muga Muchū",
+  "loading_order": 110,
+  "requires": [],
+  "optional": [],
+  "dependencies": [],
+  "js": "index.js",
+  "css": "style.css",
+  "author": "哈基米三十一世",
+  "version": "1.8.0",
+  "homePage": "",
+  "auto_update": false,
+  "minimum_client_version": "1.12.0"
+}

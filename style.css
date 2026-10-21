@@ -1,0 +1,621 @@
+/* 无我梦中 · Muga Muchū — author: 哈基米三十一世 */
+
+.msv-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    font-size: 0.92em;
+}
+
+.msv-head {
+    border-left: 3px solid var(--SmartThemeQuoteColor, #c58b5a);
+    padding-left: 8px;
+    margin-bottom: 2px;
+}
+
+.msv-title {
+    font-weight: 700;
+    letter-spacing: 0.5px;
+}
+
+.msv-ver {
+    opacity: 0.55;
+    font-size: 0.8em;
+    font-weight: 400;
+}
+
+.msv-sub {
+    opacity: 0.55;
+    font-size: 0.82em;
+}
+
+.msv-section {
+    margin-top: 8px;
+    padding-top: 6px;
+    border-top: 1px dashed rgba(255, 255, 255, 0.12);
+    font-weight: 600;
+    opacity: 0.85;
+    font-size: 0.88em;
+    letter-spacing: 0.5px;
+}
+
+.msv-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4px 8px;
+}
+
+.msv-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.msv-label {
+    flex: 0 0 62px;
+    opacity: 0.75;
+    font-size: 0.88em;
+}
+
+.msv-row select,
+.msv-row input[type="text"] {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.msv-check {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.msv-check input {
+    margin: 0;
+}
+
+.msv-arrow {
+    opacity: 0.4;
+}
+
+#msv_test_in {
+    width: 100%;
+    resize: vertical;
+    font-family: inherit;
+    font-size: 0.9em;
+}
+
+#msv_test_out {
+    margin: 0;
+    padding: 6px 8px;
+    max-height: 180px;
+    overflow: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+    background: rgba(0, 0, 0, 0.22);
+    border-radius: 4px;
+    font-size: 0.84em;
+    display: none;
+}
+
+.msv-stats {
+    opacity: 0.7;
+    font-size: 0.84em;
+    line-height: 1.5;
+    white-space: pre-wrap;
+}
+
+.msv-rule {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 2px 0;
+    font-size: 0.86em;
+}
+
+.msv-rule .msv-rule-src {
+    opacity: 0.85;
+}
+
+.msv-rule .msv-rule-to {
+    opacity: 0.85;
+    color: var(--SmartThemeQuoteColor, #c58b5a);
+}
+
+.msv-rule .msv-del {
+    margin-left: auto;
+    opacity: 0.45;
+    cursor: pointer;
+}
+
+.msv-rule .msv-del:hover {
+    opacity: 1;
+    color: #e06c6c;
+}
+
+.msv-warn {
+    color: #e0a860;
+    font-size: 0.84em;
+}
+
+/* ---- 神谕终端 · 双蛇杖 ---- */
+.msv-weapons {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 4px;
+    margin-bottom: 4px;
+}
+
+.msv-wpn {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1px;
+    padding: 5px 7px;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 5px;
+    background: rgba(255, 255, 255, 0.03);
+    cursor: pointer;
+    font-size: 0.78em;
+    line-height: 1.25;
+    text-align: left;
+    transition: all 0.15s ease;
+}
+
+.msv-wpn:hover {
+    border-color: rgba(255, 255, 255, 0.35);
+    background: rgba(255, 255, 255, 0.07);
+}
+
+.msv-wpn.active {
+    border-color: var(--SmartThemeQuoteColor, #c58b5a);
+    background: rgba(197, 139, 90, 0.16);
+    box-shadow: 0 0 6px rgba(197, 139, 90, 0.25);
+}
+
+.msv-wpn b {
+    font-size: 1.05em;
+}
+
+.msv-wpn span {
+    opacity: 0.55;
+    font-size: 0.85em;
+}
+
+.msv-wpn em {
+    opacity: 0.7;
+    font-size: 0.78em;
+    font-style: normal;
+}
+
+.msv-wline {
+    font-size: 0.82em;
+    opacity: 0.72;
+    font-style: italic;
+    padding: 3px 2px 0;
+    line-height: 1.4;
+}
+
+/* ================================================================
+ * 无我梦中 · 阿鼻叫唤 — 画室皮肤
+ * 让厚甲的 AI 在无我之梦里，周遭尽是阿鼻叫唤。
+ * 只改视觉层，不动 DOM 结构与事件。
+ * ================================================================ */
+
+.msv-panel {
+    --msv-ink:        #14100d;
+    --msv-paper:      #d7c7a6;
+    --msv-paper-dim:  rgba(215, 199, 166, .58);
+    --msv-soot:       #2a211b;
+    --msv-ember:      #c87845;
+    --msv-vermil:     #8b302d;
+    --msv-blood:      #a9443d;
+    --msv-ash:        rgba(190, 182, 165, .30);
+    --msv-line:       rgba(215, 199, 166, .14);
+    --msv-line-soft:  rgba(215, 199, 166, .075);
+
+    gap: 9px;
+    padding: 12px 12px 14px;
+    border-radius: 8px;
+    font-size: .95em;
+    color: var(--msv-paper);
+    background:
+        radial-gradient(120% 80% at 0% 0%, rgba(139, 48, 45, .10), transparent 55%),
+        radial-gradient(100% 70% at 100% 100%, rgba(200, 120, 69, .07), transparent 60%),
+        linear-gradient(158deg, rgba(20, 16, 13, .92), rgba(26, 20, 16, .88));
+    border: 1px solid var(--msv-line-soft);
+    box-shadow:
+        inset 0 1px 0 rgba(215, 199, 166, .05),
+        inset 0 0 42px rgba(0, 0, 0, .35),
+        0 4px 16px rgba(0, 0, 0, .28);
+}
+
+/* ——— 匾额 ——— */
+.msv-head {
+    position: relative;
+    padding: 12px 14px 11px 16px;
+    margin: 0 0 3px;
+    border: 1px solid rgba(215, 199, 166, .12);
+    border-left: 3px solid var(--msv-vermil);
+    border-radius: 6px;
+    background:
+        linear-gradient(135deg, rgba(139, 48, 45, .16), rgba(20, 16, 13, .25) 62%),
+        linear-gradient(180deg, rgba(215, 199, 166, .035), transparent);
+    box-shadow: inset 0 1px 0 rgba(215, 199, 166, .07);
+}
+.msv-head::after {
+    content: '';
+    position: absolute;
+    inset: 3px 5px auto auto;
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(169, 68, 61, .22), transparent 68%);
+    pointer-events: none;
+}
+.msv-title {
+    font-size: 1.12em;
+    letter-spacing: 2.5px;
+    color: #e8dcc4;
+    text-shadow: 0 0 10px rgba(139, 48, 45, .28);
+}
+.msv-ver {
+    margin-left: 6px;
+    color: var(--msv-ember);
+    opacity: .72;
+    letter-spacing: .5px;
+}
+.msv-sub {
+    margin-top: 6px;
+    opacity: 1;
+    line-height: 1.62;
+}
+.msv-sub-title {
+    color: var(--msv-vermil);
+    letter-spacing: 1.6px;
+    font-size: .95em;
+}
+.msv-sub-line {
+    color: var(--msv-paper-dim);
+    font-size: .93em;
+    letter-spacing: .3px;
+}
+.msv-sub-sign {
+    display: inline-block;
+    margin-top: 3px;
+    color: rgba(190, 182, 165, .42);
+    font-size: .82em;
+    letter-spacing: .4px;
+}
+
+/* ——— 分区：像宣纸上的界栏 ——— */
+.msv-section {
+    position: relative;
+    margin-top: 8px;
+    padding: 8px 10px 5px 18px;
+    border-top: 1px solid var(--msv-line);
+    color: var(--msv-ember);
+    opacity: .96;
+    letter-spacing: 2px;
+    font-size: .88em;
+    font-weight: 600;
+}
+.msv-section::before {
+    content: '';
+    position: absolute;
+    left: 5px;
+    top: 15px;
+    width: 6px;
+    height: 1px;
+    background: var(--msv-vermil);
+    box-shadow: 0 3px 0 rgba(139, 48, 45, .55);
+}
+
+/* ——— 表单层 ——— */
+.msv-grid { gap: 7px 10px; }
+.msv-row { min-height: 34px; gap: 8px; }
+.msv-label {
+    flex-basis: 68px;
+    color: var(--msv-paper-dim);
+    opacity: 1;
+    letter-spacing: .5px;
+}
+.msv-row select,
+.msv-row input[type="text"] {
+    min-height: 32px;
+    border-radius: 4px;
+    background: rgba(0, 0, 0, .28);
+    border: 1px solid var(--msv-line-soft);
+    color: var(--msv-paper);
+}
+.msv-row select:focus,
+.msv-row input[type="text"]:focus {
+    border-color: rgba(200, 120, 69, .5);
+    outline: none;
+    box-shadow: 0 0 0 1px rgba(200, 120, 69, .16);
+}
+.msv-check {
+    min-height: 32px;
+    padding: 4px 7px;
+    border: 1px solid var(--msv-line-soft);
+    border-radius: 4px;
+    color: var(--msv-paper-dim);
+    transition: border-color .15s ease, background .15s ease;
+}
+.msv-check:hover {
+    border-color: rgba(215, 199, 166, .22);
+    background: rgba(215, 199, 166, .035);
+}
+.msv-check input {
+    width: 16px;
+    height: 16px;
+    accent-color: var(--msv-vermil);
+}
+.msv-arrow { color: rgba(215, 199, 166, .35); }
+
+/* ——— 六把武器：不是装备栏，是六道被火烤过的刀痕 ——— */
+.msv-weapons {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    margin: 2px 0 0;
+}
+.msv-wpn {
+    position: relative;
+    min-height: 76px;
+    justify-content: center;
+    gap: 3px;
+    padding: 10px 11px 10px 14px;
+    border: 1px solid var(--msv-line);
+    border-radius: 6px;
+    background:
+        linear-gradient(152deg, rgba(215, 199, 166, .055), rgba(0, 0, 0, .18) 70%);
+    color: var(--msv-paper);
+    font-size: .88em;
+    line-height: 1.34;
+    text-align: left;
+    cursor: pointer;
+    transition: border-color .16s ease, background .16s ease,
+                box-shadow .16s ease, transform .1s ease;
+}
+.msv-wpn::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 10px;
+    bottom: 10px;
+    width: 2px;
+    border-radius: 2px;
+    background: rgba(215, 199, 166, .16);
+    transition: background .16s ease, box-shadow .16s ease;
+}
+.msv-wpn:hover {
+    border-color: rgba(215, 199, 166, .26);
+    background: linear-gradient(152deg, rgba(215, 199, 166, .085), rgba(0, 0, 0, .18) 70%);
+}
+.msv-wpn:active { transform: scale(.986); }
+
+.msv-wpn.active {
+    border-color: rgba(169, 68, 61, .62);
+    background:
+        radial-gradient(120% 100% at 0% 0%, rgba(169, 68, 61, .20), transparent 62%),
+        linear-gradient(152deg, rgba(215, 199, 166, .06), rgba(0, 0, 0, .2) 70%);
+    box-shadow:
+        inset 0 0 22px rgba(139, 48, 45, .16),
+        0 2px 10px rgba(0, 0, 0, .22);
+}
+.msv-wpn.active::before {
+    background: var(--msv-blood);
+    box-shadow: 0 0 9px rgba(169, 68, 61, .55);
+}
+
+.msv-wpn b {
+    font-size: 1.09em;
+    color: #e8dcc4;
+    letter-spacing: 1.4px;
+    font-weight: 600;
+}
+.msv-wpn span.msv-wpn-type {
+    color: var(--msv-ember);
+    opacity: .88;
+    font-size: .84em;
+    letter-spacing: .6px;
+}
+.msv-wpn em.msv-wpn-detail {
+    color: rgba(190, 182, 165, .58);
+    opacity: 1;
+    font-size: .78em;
+    font-style: normal;
+    letter-spacing: .2px;
+}
+.msv-wpn.active b { color: #f2e6cc; }
+.msv-wpn.active span.msv-wpn-type { color: #d98a5a; }
+
+/* ——— 武器台词：像落在纸边的一句批注 ——— */
+.msv-wline {
+    margin: 2px 1px 1px;
+    padding: 9px 12px 9px 13px;
+    border-left: 2px solid rgba(169, 68, 61, .55);
+    border-radius: 0 5px 5px 0;
+    background: linear-gradient(90deg, rgba(139, 48, 45, .09), transparent 72%);
+    color: rgba(215, 199, 166, .72);
+    font-style: italic;
+    opacity: 1;
+    line-height: 1.6;
+    letter-spacing: .3px;
+}
+
+/* ——— 测试台 / 统计 / 规则 ——— */
+#msv_test_in {
+    border-radius: 4px;
+    background: rgba(0, 0, 0, .26);
+    border: 1px solid var(--msv-line-soft);
+    color: var(--msv-paper);
+}
+#msv_test_out {
+    padding: 8px 10px;
+    border: 1px solid var(--msv-line-soft);
+    border-radius: 5px;
+    background: rgba(0, 0, 0, .26);
+    color: rgba(215, 199, 166, .78);
+}
+.msv-stats {
+    color: rgba(190, 182, 165, .62);
+    opacity: 1;
+    font-variant-numeric: tabular-nums;
+}
+.msv-rule .msv-rule-src { color: rgba(215, 199, 166, .82); opacity: 1; }
+.msv-rule .msv-rule-to  { color: var(--msv-ember); opacity: .92; }
+.msv-rule .msv-del:hover { color: var(--msv-blood); }
+.msv-warn {
+    color: #c87a4a;
+    font-size: .84em;
+}
+
+/* ——— 手机 ——— */
+@media (max-width: 420px) {
+    .msv-panel { font-size: .94em; padding: 10px 10px 12px; }
+    .msv-wpn { min-height: 80px; padding: 10px 9px 10px 12px; }
+    .msv-wpn em.msv-wpn-detail { font-size: .75em; }
+    .msv-label { flex-basis: 62px; }
+    .msv-title { letter-spacing: 2px; }
+    .msv-sub-line { font-size: .9em; }
+}
+
+/* ================================================================
+ * v1.8.0 · 无我梦中 / 阿鼻叫唤：画室皮肤
+ * 只改视觉，不改变现有 DOM、事件和状态逻辑。
+ * ================================================================ */
+.msv-panel {
+    --muga-ink: rgba(17, 14, 15, .78);
+    --muga-paper: #d7c7a6;
+    --muga-ash: #aaa193;
+    --muga-umber: #6d4b38;
+    --muga-vermilion: #9b3f35;
+    --muga-ember: #c87845;
+    --muga-line: rgba(215, 199, 166, .18);
+    --muga-soft-line: rgba(215, 199, 166, .09);
+    --muga-quote: var(--SmartThemeQuoteColor, #c58b5a);
+    gap: 9px;
+    color: var(--muga-paper);
+    font-size: .95em;
+}
+.msv-head {
+    position: relative;
+    overflow: hidden;
+    padding: 12px 13px 11px 16px;
+    margin: 0 0 2px;
+    border: 1px solid var(--muga-soft-line);
+    border-left: 3px solid var(--muga-vermilion);
+    border-radius: 3px 8px 8px 3px;
+    background:
+        linear-gradient(104deg, rgba(139,48,45,.15), transparent 42%),
+        repeating-linear-gradient(166deg, transparent 0 18px, rgba(215,199,166,.025) 19px 20px),
+        rgba(20,16,16,.68);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.045), 0 4px 14px rgba(0,0,0,.28);
+}
+.msv-head::after {
+    content: '';
+    position: absolute;
+    right: -18px;
+    top: 7px;
+    width: 110px;
+    height: 1px;
+    background: var(--muga-ember);
+    opacity: .34;
+    transform: rotate(-17deg);
+    box-shadow: -17px 8px 0 rgba(155,63,53,.35), -31px 16px 0 rgba(215,199,166,.12);
+}
+.msv-title { color: var(--muga-paper); font-size: 1.1em; letter-spacing: 1.4px; }
+.msv-ver { color: var(--muga-ember); opacity: .9; }
+.msv-sub { margin-top: 4px; line-height: 1.55; }
+.msv-sub-title { color: var(--muga-ash); letter-spacing: .8px; }
+.msv-sub-line { color: var(--muga-paper); opacity: .88; font-size: .88em; }
+.msv-sub-sign { color: var(--muga-ash); opacity: .58; font-size: .78em; }
+.msv-section {
+    position: relative;
+    margin-top: 7px;
+    padding: 9px 10px 5px 17px;
+    border-top: 1px solid var(--muga-line);
+    color: var(--muga-ember);
+    opacity: .95;
+    letter-spacing: .8px;
+    font-size: .9em;
+}
+.msv-section::before {
+    content: '◆';
+    position: absolute;
+    left: 3px;
+    top: 8px;
+    color: var(--muga-vermilion);
+    font-size: .62em;
+}
+.msv-grid { gap: 7px 10px; }
+.msv-row { min-height: 34px; gap: 8px; }
+.msv-label { flex-basis: 68px; color: var(--muga-ash); opacity: .9; }
+.msv-row select, .msv-row input[type="text"] { min-height: 32px; border-radius: 3px; }
+.msv-check {
+    min-height: 32px;
+    padding: 4px 6px;
+    border: 1px solid var(--muga-soft-line);
+    border-radius: 3px;
+    color: var(--muga-ash);
+}
+.msv-check:hover { border-color: var(--muga-line); background: rgba(155,63,53,.08); }
+.msv-check input { width: 16px; height: 16px; accent-color: var(--muga-vermilion); }
+.msv-warn { color: var(--muga-ember); font-size: .84em; }
+.msv-weapons { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; margin: 0; }
+.msv-wpn {
+    position: relative;
+    min-height: 76px;
+    justify-content: center;
+    gap: 3px;
+    padding: 9px 10px 9px 14px;
+    border: 1px solid var(--muga-line);
+    border-radius: 3px 7px 7px 3px;
+    background: linear-gradient(145deg, rgba(215,199,166,.065), rgba(17,14,15,.16));
+    color: var(--muga-paper);
+    font-size: .88em;
+    line-height: 1.34;
+    transition: border-color .16s ease, background .16s ease, transform .12s ease;
+}
+.msv-wpn::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 9px;
+    bottom: 9px;
+    width: 3px;
+    border-radius: 0 2px 2px 0;
+    background: var(--muga-umber);
+}
+.msv-wpn:hover { border-color: rgba(200,120,69,.55); background: rgba(155,63,53,.1); }
+.msv-wpn:active { transform: scale(.985); }
+.msv-wpn.active {
+    border-color: rgba(200,120,69,.75);
+    background: linear-gradient(145deg, rgba(155,63,53,.2), rgba(200,120,69,.075));
+    box-shadow: inset 0 0 0 1px rgba(200,120,69,.1), 0 3px 12px rgba(0,0,0,.24);
+}
+.msv-wpn.active::before { background: var(--muga-ember); box-shadow: 0 0 8px rgba(200,120,69,.32); }
+.msv-wpn b { color: var(--muga-paper); font-size: 1.08em; letter-spacing: .5px; }
+.msv-wpn span.msv-wpn-type { color: var(--muga-ember); opacity: .9; font-size: .84em; }
+.msv-wpn em.msv-wpn-detail { color: var(--muga-ash); opacity: .8; font-size: .78em; font-style: normal; }
+.msv-wline {
+    margin: 0 2px 2px;
+    padding: 8px 10px;
+    border-left: 2px solid rgba(155,63,53,.72);
+    border-radius: 0 3px 3px 0;
+    background: rgba(155,63,53,.075);
+    color: var(--muga-ash);
+    opacity: 1;
+    font-style: italic;
+    line-height: 1.5;
+}
+#msv_test_out { border: 1px solid var(--muga-soft-line); border-radius: 3px; padding: 8px 10px; background: rgba(17,14,15,.34); }
+.msv-stats { color: var(--muga-ash); opacity: .86; }
+@media (max-width: 420px) {
+    .msv-panel { font-size: .94em; }
+    .msv-wpn { min-height: 80px; padding-left: 13px; }
+    .msv-wpn em.msv-wpn-detail { font-size: .74em; }
+    .msv-label { flex-basis: 64px; }
+}
