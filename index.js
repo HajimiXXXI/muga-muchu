@@ -23,8 +23,13 @@
  * ==========================================================================*/
 
 const MODULE_NAME = 'muga_muchu';
-const VERSION = '1.8.0';
+const VERSION = '1.9.1';
 const LOG = '[无我梦中]';
+
+/* 本扩展的 GitHub 仓库：插件内“检查更新”只读它 */
+const REPO = 'HajimiXXXI/muga-muchu';
+const REPO_URL = 'https://github.com/' + REPO;
+const RELEASE_API = 'https://api.github.com/repos/' + REPO + '/releases/latest';
 
 /* ---------------------------------------------------------------------------
  * 0. 基础工具
@@ -682,8 +687,8 @@ function decodeText(text) {
     const s0 = cfg();
     if (s0 && s0.markerMode) {
         text = text
-            .replace(/<<<\s*END\s*>>>/gi, '</think>')
-            .replace(/<<<\s*PLAN\s*>>>/gi, '<think>');
+            .replace(/(^|[^<])<{2,3}\s*END\s*>{2,3}(?!>)/gi, '$1</think>')
+            .replace(/(^|[^<])<{2,3}\s*PLAN\s*>{2,3}(?!>)/gi, '$1<think>');
     }
 
     if (!activeMap.size || !decodeCache) return text;
@@ -760,8 +765,14 @@ function onPromptReady(data) {
     /* 输出侧还原表：合并而不是覆盖 —— 总结/quiet 这类旁路请求会重复触发这里，
        用覆盖法会把主生成的映射顶掉，还原就错位了 */
     if (s.decodeOutput && map.size) {
-        if (activeMap.size > 600) activeMap = new Map();
+        for (const k of map.keys()) activeMap.delete(k);      /* 先删后插：当前轮排到队尾 */
         for (const [k, v] of map) activeMap.set(k, v);
+        if (activeMap.size > 600) {
+            for (const k of [...activeMap.keys()]) {          /* 淘汰最旧，当前轮不淘汰 */
+                if (activeMap.size <= 600) break;
+                if (!map.has(k)) activeMap.delete(k);
+            }
+        }
         rebuildDecodeCache();
     }
 
@@ -781,7 +792,8 @@ function decodeMessageAt(id) {
     const c = getCtx();
     const s = cfg();
     if (!c || !s || !s.enabled || !s.decodeOutput) return;
-    if (!activeMap.size) return ;
+    /* 只开标记替换时映射表是空的，但标记仍要还原 */
+    if (!activeMap.size && !s.markerMode) return;
     const msg = c.chat?.[id];
     if (!msg) return;
 
@@ -797,6 +809,24 @@ function decodeMessageAt(id) {
         if (out !== reasoning) { msg.extra.reasoning = out; dirty = true; }
     }
 
+    /* 各个滑动页：不一起还原的话，切页会重新看到 <<<PLAN>>> */
+    if (Array.isArray(msg.swipes)) {
+        for (let i = 0; i < msg.swipes.length; i++) {
+            const t = msg.swipes[i];
+            if (typeof t !== 'string') continue;
+            const out = decodeText(t);
+            if (out !== t) { msg.swipes[i] = out; dirty = true; }
+        }
+    }
+    if (Array.isArray(msg.swipe_info)) {
+        for (const it of msg.swipe_info) {
+            const r = it && it.extra && it.extra.reasoning;
+            if (typeof r !== 'string') continue;
+            const out = decodeText(r);
+            if (out !== r) { it.extra.reasoning = out; dirty = true; }
+        }
+    }
+
     if (dirty) {
         try { c.updateMessageBlock?.(id); } catch (_) { /* ignore */ }
         try { c.saveChat?.(); } catch (_) { /* ignore */ }
@@ -804,8 +834,9 @@ function decodeMessageAt(id) {
 }
 
 function onMessageReceived(id) {
-    if (typeof id !== 'number') return;
-    decodeMessageAt(id);
+    const n = typeof id === 'string' && /^\d+$/.test(id) ? Number(id) : id;
+    if (typeof n !== 'number' || !Number.isFinite(n)) return;
+    decodeMessageAt(n);
 }
 
 let pendingIndex = -1;
@@ -936,6 +967,19 @@ function buildUI() {
     </div>
     <pre id="msv_test_out"></pre>
 
+    <div class="msv-section">更新</div>
+    <div class="msv-update">
+        <div class="msv-update-row">
+            <span class="msv-update-cur">当前 v${VERSION}</span>
+            <button id="msv_check_update" class="menu_button">检查更新</button>
+        </div>
+        <div id="msv_update_msg" class="msv-update-msg">不会自动覆盖，动手前会再问你一次。</div>
+        <div class="msv-update-row" id="msv_update_actions" style="display:none">
+            <button id="msv_do_update" class="menu_button">更新到最新版本</button>
+            <a id="msv_update_link" class="menu_button" target="_blank" rel="noopener noreferrer">打开发布页</a>
+        </div>
+    </div>
+
     <div class="msv-section">统计</div>
     <div id="msv_stats" class="msv-stats"></div>
 
@@ -1052,6 +1096,9 @@ function bindUI() {
             : '—— 当前聊天里没有命中词 ——';
     });
 
+    on('msv_check_update', 'click', checkUpdate);
+    on('msv_do_update', 'click', doUpdate);
+
     on('msv_copymap', 'click', async () => {
         const lines = [...activeMap.entries()].map(([k, v]) => `${k} → ${v}`);
         if (!lines.length) { try { toastr?.info?.('上一次请求没有触发替换喵'); } catch (_) { /* ignore */ } return; }
@@ -1062,6 +1109,111 @@ function bindUI() {
     });
 }
 
+
+/* ---------------------------------------------------------------------------
+ * 1e. 手动更新
+ *     只做两件事：读 GitHub 最新版本；调用酒馆自己的扩展更新接口。
+ *     不写文件、不拿 token、不自动更新。
+ * ------------------------------------------------------------------------ */
+
+let latestTag = '';
+
+function parseVer(v) {
+    return String(v || '').replace(/^v/i, '').split(/[.\-+]/).map(x => parseInt(x, 10) || 0);
+}
+
+function newerThan(a, b) {
+    const x = parseVer(a), y = parseVer(b);
+    const n = Math.max(x.length, y.length);
+    for (let i = 0; i < n; i++) {
+        const p = x[i] || 0, q = y[i] || 0;
+        if (p > q) return true;
+        if (p < q) return false;
+    }
+    return false;
+}
+
+function updateMsg(text, kind) {
+    const el = $el('msv_update_msg');
+    if (!el) return;
+    el.textContent = text;
+    el.dataset.kind = kind || '';
+}
+
+function stHeaders() {
+    try {
+        if (typeof getRequestHeaders === 'function') return getRequestHeaders();
+    } catch (_) { /* ignore */ }
+    return { 'Content-Type': 'application/json' };
+}
+
+async function extApi(path, body) {
+    const res = await fetch(path, { method: 'POST', headers: stHeaders(), body: JSON.stringify(body) });
+    let data = null;
+    try { data = await res.json(); } catch (_) { /* ignore */ }
+    return { ok: res.ok, status: res.status, data };
+}
+
+async function checkUpdate() {
+    const btn = $el('msv_check_update');
+    if (btn) btn.disabled = true;
+    updateMsg('正在问 GitHub…', 'busy');
+    try {
+        const res = await fetch(RELEASE_API, { headers: { Accept: 'application/vnd.github+json' } });
+        if (!res.ok) throw new Error('GitHub ' + res.status);
+        const data = await res.json();
+        latestTag = String(data.tag_name || '').replace(/^v/i, '');
+        const actions = $el('msv_update_actions');
+        const link = $el('msv_update_link');
+        if (link) link.href = data.html_url || REPO_URL;
+        if (latestTag && newerThan(latestTag, VERSION)) {
+            updateMsg('发现新版本 v' + latestTag + '（当前 v' + VERSION + '）', 'new');
+            if (actions) actions.style.display = '';
+        } else {
+            updateMsg('已是最新版本 v' + VERSION, 'ok');
+            if (actions) actions.style.display = 'none';
+        }
+    } catch (e) {
+        updateMsg('检查失败：' + ((e && e.message) || '网络不通'), 'fail');
+        const actions = $el('msv_update_actions');
+        if (actions) actions.style.display = '';
+        const link = $el('msv_update_link');
+        if (link && !link.getAttribute('href')) link.href = REPO_URL;
+    } finally {
+        if (btn) btn.disabled = false;
+    }
+}
+
+async function doUpdate() {
+    const btn = $el('msv_do_update');
+    if (btn) btn.disabled = true;
+    updateMsg('正在让酒馆拉取更新…', 'busy');
+    try {
+        let type = null, info = null;
+        for (const g of [true, false]) {
+            const r = await extApi('/api/extensions/version', { extensionName: 'muga-muchu', global: g });
+            if (r.ok) { type = g; info = r.data; break; }
+        }
+        if (type === null) {
+            updateMsg('这个酒馆不支持扩展自更新，请点「打开发布页」手动更新。', 'fail');
+            return;
+        }
+        if (info && info.isUpToDate) {
+            updateMsg('已经是最新的了，刷新页面即可。', 'ok');
+            return;
+        }
+        const r2 = await extApi('/api/extensions/update', { extensionName: 'muga-muchu', global: type });
+        if (!r2.ok) {
+            updateMsg('更新失败：' + ((r2.data && r2.data.message) || ('HTTP ' + r2.status)), 'fail');
+            return;
+        }
+        updateMsg('更新完成，刷新页面后生效。', 'ok');
+    } catch (e) {
+        updateMsg('更新出错：' + ((e && e.message) || '未知错误'), 'fail');
+    } finally {
+        if (btn) btn.disabled = false;
+    }
+}
 
 /* ---------------------------------------------------------------------------
  * 神谕终端面板
@@ -1217,6 +1369,7 @@ jQuery(async () => {
     try {
         c.eventSource.on(ev('CHAT_COMPLETION_PROMPT_READY', 'chat_completion_prompt_ready'), onPromptReady);
         c.eventSource.on(ev('MESSAGE_RECEIVED', 'message_received'), onMessageReceived);
+        c.eventSource.on(ev('MESSAGE_SWIPED', 'message_swiped'), onMessageReceived);
         c.eventSource.on(ev('GENERATION_ENDED', 'generation_ended'), onGenerationEnded);
         c.eventSource.on(ev('GENERATION_STARTED', 'generation_started'), onGenerationStarted);
     } catch (e) {

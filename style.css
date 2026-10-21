@@ -619,3 +619,38 @@
     .msv-wpn em.msv-wpn-detail { font-size: .74em; }
     .msv-label { flex-basis: 64px; }
 }
+
+/* ---- v1.9.0 · 手动更新 ---- */
+.msv-update {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 2px 2px 0;
+}
+.msv-update-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+}
+.msv-update-cur {
+    color: var(--muga-ash, rgba(190,182,165,.9));
+    font-size: .88em;
+    letter-spacing: .5px;
+}
+.msv-update-msg {
+    color: var(--muga-ash, rgba(190,182,165,.85));
+    font-size: .84em;
+    line-height: 1.5;
+    min-height: 1.5em;
+}
+.msv-update-msg[data-kind="new"] { color: var(--muga-ember, #c87845); }
+.msv-update-msg[data-kind="ok"] { color: #8fae86; }
+.msv-update-msg[data-kind="fail"] { color: #c76b63; }
+.msv-update-msg[data-kind="busy"] { opacity: .8; }
+.msv-update .menu_button { min-height: 30px; }
+.msv-update a.menu_button { display: inline-flex; align-items: center; text-decoration: none; }
+@media (max-width: 420px) {
+    .msv-update-row { gap: 6px; }
+    .msv-update .menu_button { min-height: 34px; }
+}
