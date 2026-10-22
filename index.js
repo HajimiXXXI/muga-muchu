@@ -905,17 +905,17 @@ function judgeText(text) {
     const t = String(text || '').trim();
     if (!t) return { state: 'empty', text: '这轮没写出东西' };
 
-    let thinkLen = 0;
-    const re = /<think(?:ing)?[^>]*>([\s\S]*?)<\/think(?:ing)?>/gi;
-    let m;
-    while ((m = re.exec(t))) thinkLen += (m[1] || '').length;
-    const bodyLen = t.length - thinkLen;
+    // 先剥离 think 标签，再算正文字数
+    const thinkRe = /<think(?:ing)?[^>]*>[\s\S]*?<\/think(?:ing)?>/gi;
+    const bodyText = t.replace(thinkRe, '');
+    const bodyLen = bodyText.trim().length;
+    const thinkLen = t.length - bodyText.length;
 
     if (thinkLen > 0 && bodyLen < 40) return { state: 'shell', text: '只有思考壳' };
     if (/^(抱歉|对不起|很抱歉|我无法|我不能|I can'?t|I cannot|I'?m sorry)/i.test(t.slice(0, 24))) {
         return { state: 'refuse', text: '这轮被拒了' };
     }
-    if (bodyLen < 40) return { state: 'short', text: '只写了几个字' };
+    if (t.length < 40) return { state: 'short', text: '只写了几个字' };
     return { state: 'ok', text: '这轮正常 · ' + t.length + ' 字' };
 }
 
@@ -1004,6 +1004,7 @@ function renderRecipes() {
     const box = $el('msv_recipes');
     if (!box) return;
     const s = cfg();
+    if (!s) return;
     const cur = currentRecipeId(s);
     box.innerHTML = RECIPES.map(function (r) {
         const on = r.id === cur ? ' is-on' : '';
@@ -1282,12 +1283,9 @@ function buildUI() {
 }
 
 function bindUI() {
-    if (bindUI.bound) return;  // 防止重复绑定
-    
     const s = cfg();
     if (!s) {
         if (!bindUI.retries) bindUI.retries = 0;
-    bindUI.bound = true;  // 标记已绑定
         if (bindUI.retries < 5) {
             bindUI.retries++;
             setTimeout(bindUI, 300);
@@ -1297,7 +1295,6 @@ function bindUI() {
         return;
     }
     bindUI.retries = 0;
-    bindUI.bound = true;  // 标记已绑定
 
     const on = (id, ev, fn) => {
         const el = $el(id);
@@ -1321,6 +1318,11 @@ function bindUI() {
         document.addEventListener('keydown', escHandler);
         bindUI.escBound = true;
     }
+
+    /* 折叠头：阻止冒泡到外层 inline-drawer */
+    document.querySelectorAll('.msv-fold-head').forEach(head => {
+        head.addEventListener('click', (ev) => ev.stopPropagation());
+    });
 
     /* 主题印章：夜 ↔ 火 */
     const sealEl = $el('msv_theme');

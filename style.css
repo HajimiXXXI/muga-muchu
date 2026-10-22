@@ -4,8 +4,6 @@
     display: flex;
     flex-direction: column;
     gap: 6px;
-    max-height: 85vh;
-    overflow-y: auto;
     font-size: 0.92em;
 }
 
@@ -207,8 +205,14 @@
 
 .msv-panel {
     --msv-ink:        var(--msv-bg);
+    --msv-paper:      var(--msv-paper);
+    --msv-paper-dim:  rgba(var(--msv-paper-rgb), .58);
+    --msv-soot:       var(--msv-layer);
     --msv-vermil:     var(--msv-vermil-deep);
+    --msv-blood:      var(--msv-blood);
+    --msv-ash:        rgba(190, 182, 165, .30);
     --msv-line:       rgba(var(--msv-paper-rgb), .14);
+    --msv-line-soft:  rgba(var(--msv-paper-rgb), .075);
 
     gap: 9px;
     padding: 12px 12px 14px;
@@ -950,7 +954,6 @@
     top: 0;
     right: 0;
     bottom: 0;
-    width: min(92vw, 420px);
     background: var(--msv-bg);
     color: var(--msv-paper);
     border-left: 1px solid rgba(var(--msv-vermil-rgb), 0.35);
