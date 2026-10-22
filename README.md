@@ -194,7 +194,7 @@ SillyTavern/
 7. **judgeText 判定不一致** → 统一用 `bodyLen`（不含 think 的正文长度）
 8. **面板太高** → 加 `max-height: 85vh` + `overflow-y: auto`，不再顶出屏幕
 9. **折叠点不动** → 折叠头加 `stopPropagation`，不再被外层 inline-drawer 抢走点击
-10. **面板太窄** → 删掉 `width: min(92vw, 420px)`，改为自适应容器宽度
+10. **面板太窄/点哪都折叠** → 面板原被放进 `.inline-drawer-header`（ST 的横向 flex 条），按 1.9 结构移入 `.inline-drawer-content`
 
 ---
 
@@ -221,8 +221,8 @@ SillyTavern/
 ```
 muga-muchu/
 ├── manifest.json      14 行   扩展声明
-├── index.js         1700 行   全部逻辑
-└── style.css        1136 行   面板样式
+├── index.js       1879 行   全部逻辑
+└── style.css      1343 行   面板样式
 ```
 
 ---
