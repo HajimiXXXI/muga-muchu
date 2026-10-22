@@ -1099,6 +1099,10 @@ function buildUI() {
     wrap.className = 'inline-drawer';
     wrap.innerHTML = `
 <div class="inline-drawer-toggle inline-drawer-header">
+    <b>无我梦中</b>
+    <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
+</div>
+<div class="inline-drawer-content">
 <div class="msv-panel">
 
     <div class="msv-head">
