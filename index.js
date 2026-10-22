@@ -1696,9 +1696,9 @@ jQuery(async () => {
         console.warn(LOG, '已经挂载过，跳过重复注入');
         return;
     }
-    globalThis.__mugaMounted = true;
 
     const c = await waitCtx();
+    globalThis.__mugaMounted = true;
     if (!c) {
         console.error(LOG, '拿不到 SillyTavern context，扩展没初始化');
         return;
