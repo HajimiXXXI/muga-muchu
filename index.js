@@ -23,8 +23,13 @@
  * ==========================================================================*/
 
 const MODULE_NAME = 'muga_muchu';
-const VERSION = '1.8.0';
+const VERSION = '2.0.0';
 const LOG = '[无我梦中]';
+
+/* 本扩展的 GitHub 仓库：插件内“检查更新”只读它 */
+const REPO = 'HajimiXXXI/muga-muchu';
+const REPO_URL = 'https://github.com/' + REPO;
+const RELEASE_API = 'https://api.github.com/repos/' + REPO + '/releases/latest';
 
 /* ---------------------------------------------------------------------------
  * 0. 基础工具
@@ -449,6 +454,8 @@ const DEFAULTS = {
     disabledIds: [],
     /** 盐：换一个盐，同一批词会换出另一批谐音字 */
     salt: 'meow',
+    /** 主题：auto 跟随酒馆 / night 夜里的画室 / fire 焚车那一夜 */
+    theme: 'auto',
     stats: {
         lastHits: 0,
         totalHits: 0,
@@ -488,6 +495,37 @@ function cfg() {
 
 function save() {
     try { getCtx()?.saveSettingsDebounced?.(); } catch (_) { /* ignore */ }
+}
+
+/* ---------------------------------------------------------------------------
+ * 2.0 双场景主题：夜 = 画室，火 = 焚车
+ * ------------------------------------------------------------------------ */
+function resolveTheme(s) {
+    if (!s) return 'night';
+    if (s.theme === 'night' || s.theme === 'fire') return s.theme;
+    try {
+        const bg = getComputedStyle(document.body).backgroundColor || '';
+        const m = bg.match(/\d+(\.\d+)?/g);
+        if (m && m.length >= 3) {
+            const r = Number(m[0]), g = Number(m[1]), b = Number(m[2]);
+            const L = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+            return L > 0.5 ? 'fire' : 'night';
+        }
+    } catch (_) { /* ignore */ }
+    return 'night';
+}
+
+function applyTheme() {
+    const s = cfg();
+    const panel = document.querySelector('.msv-panel');
+    if (!panel) return;
+    const t = resolveTheme(s);
+    panel.setAttribute('data-msv-theme', t);
+    const seal = document.getElementById('msv_theme');
+    if (seal) {
+        seal.textContent = t === 'fire' ? '火' : '夜';
+        seal.setAttribute('aria-label', t === 'fire' ? '当前：火，点击切到夜' : '当前：夜，点击切到火');
+    }
 }
 
 /* ---------------------------------------------------------------------------
@@ -625,7 +663,7 @@ function encodeText(text, s, map, detail) {
                 work = work.replace(r.re, r.to);
                 if (work !== before) {
                     hits++;
-                    if (detail && detail.length < 14) detail.push({ from: r.tag, to: '（叙事化）' });
+                    if (detail && detail.length < 40) detail.push({ from: r.tag, to: '（叙事化）', rule: 'semantic', ctx: '' });
                 }
             } catch (_) { /* 单条规则失败不影响其他 */ }
         }
@@ -637,14 +675,21 @@ function encodeText(text, s, map, detail) {
     for (const rule of wordRules) {
         try {
             rule.regex.lastIndex = 0;
-            work = work.replace(rule.regex, (m) => {
+            work = work.replace(rule.regex, (m, off, whole) => {
                 const rep = pickAlt(rule, s);
                 if (!rep) return m;
                 const out = sameCase(m, rep);
                 if (out === m) return m;
                 hits++;
                 if (map) map.set(out, m);
-                if (detail && detail.length < 14) detail.push({ from: m, to: out });
+                if (detail && detail.length < 40) {
+                    const w = String(whole || '');
+                    const a = Math.max(0, (off || 0) - 12);
+                    detail.push({
+                        from: m, to: out, rule: rule.id || rule.tag || '',
+                        ctx: w.slice(a, (off || 0) + m.length + 12).replace(/\s+/g, ' ').trim(),
+                    });
+                }
                 return out;
             });
         } catch (_) { /* 单条规则炸了不影响其他 */ }
@@ -682,8 +727,8 @@ function decodeText(text) {
     const s0 = cfg();
     if (s0 && s0.markerMode) {
         text = text
-            .replace(/<<<\s*END\s*>>>/gi, '</think>')
-            .replace(/<<<\s*PLAN\s*>>>/gi, '<think>');
+            .replace(/(^|[^<])<{2,3}\s*END\s*>{2,3}(?!>)/gi, '$1</think>')
+            .replace(/(^|[^<])<{2,3}\s*PLAN\s*>{2,3}(?!>)/gi, '$1<think>');
     }
 
     if (!activeMap.size || !decodeCache) return text;
@@ -699,6 +744,8 @@ function decodeText(text) {
  * ------------------------------------------------------------------------ */
 
 let lastRequestAt = 0;
+
+let lastRun = null;
 
 function onPromptReady(data) {
     const s = cfg();
@@ -739,7 +786,7 @@ function onPromptReady(data) {
             if (s.reflow && isSystem && !reflowed && r.text.length > (s.reflowMin || 6000)) {
                 const before = r.text;
                 r = { text: reflow(before, s), hits: r.hits };
-                if (r.text !== before) { reflowed = true; if (detail.length < 14) detail.push({ from: '阅卷层', to: '重排+垫料' }); }
+                if (r.text !== before) { reflowed = true; if (detail.length < 40) detail.push({ from: '阅卷层', to: '重排+垫料', rule: 'reflow', ctx: '' }); }
             }
             if (r.text !== m.content) { m.content = r.text; hits += r.hits; touchedMsgs++; }
         } else if (Array.isArray(m.content)) {
@@ -749,7 +796,7 @@ function onPromptReady(data) {
                     if (s.reflow && isSystem && !reflowed && r.text.length > (s.reflowMin || 6000)) {
                         const before = r.text;
                         r = { text: reflow(before, s), hits: r.hits };
-                        if (r.text !== before) { reflowed = true; if (detail.length < 14) detail.push({ from: '阅卷层', to: '重排+垫料' }); }
+                        if (r.text !== before) { reflowed = true; if (detail.length < 40) detail.push({ from: '阅卷层', to: '重排+垫料', rule: 'reflow', ctx: '' }); }
                     }
                     if (r.text !== part.text) { part.text = r.text; hits += r.hits; touchedMsgs++; }
                 }
@@ -760,10 +807,26 @@ function onPromptReady(data) {
     /* 输出侧还原表：合并而不是覆盖 —— 总结/quiet 这类旁路请求会重复触发这里，
        用覆盖法会把主生成的映射顶掉，还原就错位了 */
     if (s.decodeOutput && map.size) {
-        if (activeMap.size > 600) activeMap = new Map();
+        for (const k of map.keys()) activeMap.delete(k);      /* 先删后插：当前轮排到队尾 */
         for (const [k, v] of map) activeMap.set(k, v);
+        if (activeMap.size > 600) {
+            for (const k of [...activeMap.keys()]) {          /* 淘汰最旧，当前轮不淘汰 */
+                if (activeMap.size <= 600) break;
+                if (!map.has(k)) activeMap.delete(k);
+            }
+        }
         rebuildDecodeCache();
     }
+
+    lastRun = {
+        at: Date.now(),
+        hits,
+        touched: touchedMsgs,
+        words: map.size,
+        detail: detail.slice(0, 40),
+    };
+
+    renderStudio();
 
     if (hits > 0) {
         s.stats.lastHits = hits;
@@ -781,7 +844,8 @@ function decodeMessageAt(id) {
     const c = getCtx();
     const s = cfg();
     if (!c || !s || !s.enabled || !s.decodeOutput) return;
-    if (!activeMap.size) return ;
+    /* 只开标记替换时映射表是空的，但标记仍要还原 */
+    if (!activeMap.size && !s.markerMode) return;
     const msg = c.chat?.[id];
     if (!msg) return;
 
@@ -797,6 +861,24 @@ function decodeMessageAt(id) {
         if (out !== reasoning) { msg.extra.reasoning = out; dirty = true; }
     }
 
+    /* 各个滑动页：不一起还原的话，切页会重新看到 <<<PLAN>>> */
+    if (Array.isArray(msg.swipes)) {
+        for (let i = 0; i < msg.swipes.length; i++) {
+            const t = msg.swipes[i];
+            if (typeof t !== 'string') continue;
+            const out = decodeText(t);
+            if (out !== t) { msg.swipes[i] = out; dirty = true; }
+        }
+    }
+    if (Array.isArray(msg.swipe_info)) {
+        for (const it of msg.swipe_info) {
+            const r = it && it.extra && it.extra.reasoning;
+            if (typeof r !== 'string') continue;
+            const out = decodeText(r);
+            if (out !== r) { it.extra.reasoning = out; dirty = true; }
+        }
+    }
+
     if (dirty) {
         try { c.updateMessageBlock?.(id); } catch (_) { /* ignore */ }
         try { c.saveChat?.(); } catch (_) { /* ignore */ }
@@ -804,8 +886,9 @@ function decodeMessageAt(id) {
 }
 
 function onMessageReceived(id) {
-    if (typeof id !== 'number') return;
-    decodeMessageAt(id);
+    const n = typeof id === 'string' && /^\d+$/.test(id) ? Number(id) : id;
+    if (typeof n !== 'number' || !Number.isFinite(n)) return;
+    decodeMessageAt(n);
 }
 
 let pendingIndex = -1;
@@ -815,6 +898,50 @@ function onGenerationStarted() {
        （结束时再用 chat.length-1 去猜，swipe / 切聊天时会解码到隔壁消息） */
     const c = getCtx();
     pendingIndex = Array.isArray(c?.chat) ? c.chat.length : -1;
+}
+
+/* 2.0 判卷：回来之后，这一轮值不值 */
+function judgeText(text) {
+    const t = String(text || '').trim();
+    if (!t) return { state: 'empty', text: '这轮没写出东西' };
+
+    let thinkLen = 0;
+    const re = /<think(?:ing)?[^>]*>([\s\S]*?)<\/think(?:ing)?>/gi;
+    let m;
+    while ((m = re.exec(t))) thinkLen += (m[1] || '').length;
+    const bodyLen = t.length - thinkLen;
+
+    if (thinkLen > 0 && bodyLen < 40) return { state: 'shell', text: '只有思考壳' };
+    if (/^(抱歉|对不起|很抱歉|我无法|我不能|I can'?t|I cannot|I'?m sorry)/i.test(t.slice(0, 24))) {
+        return { state: 'refuse', text: '这轮被拒了' };
+    }
+    if (bodyLen < 40) return { state: 'short', text: '只写了几个字' };
+    return { state: 'ok', text: '这轮正常 · ' + t.length + ' 字' };
+}
+
+function judgeLastReply() {
+    const c = getCtx();
+    const chat = c?.chat;
+    if (!Array.isArray(chat)) return null;
+    for (let i = chat.length - 1; i >= 0; i--) {
+        const m = chat[i];
+        if (!m || m.is_user || m.is_system) continue;
+        return judgeText(m.mes);
+    }
+    return null;
+}
+
+let lastVerdict = null;
+
+function renderVerdict() {
+    const box = $el('msv_verdict');
+    const lamp = $el('msv_lamp');
+    const v = lastVerdict;
+    if (box) {
+        box.textContent = v ? v.text : '还没生成过';
+        box.setAttribute('data-state', v ? v.state : 'idle');
+    }
+    if (lamp) lamp.setAttribute('data-state', v ? v.state : 'idle');
 }
 
 function onGenerationEnded() {
@@ -827,7 +954,9 @@ function onGenerationEnded() {
         else if (len > 0) idx = len - 1;                                  /* regenerate */
         pendingIndex = -1;
         if (idx >= 0) decodeMessageAt(idx);
-    }, 120);
+        lastVerdict = judgeLastReply();
+        renderVerdict();
+    }, 160);
 }
 
 /* ---------------------------------------------------------------------------
@@ -835,6 +964,131 @@ function onGenerationEnded() {
  * ------------------------------------------------------------------------ */
 
 const $el = (id) => document.getElementById(id);
+
+/* ---------------------------------------------------------------------------
+ * 2.0 正文区 + 抽屉：这一轮到底改了什么
+ * ------------------------------------------------------------------------ */
+/* ---------------------------------------------------------------------------
+ * 2.0 方案条：三套内置配方，点了就换
+ * 老武器仍然可用，这里只是快捷方式，不改底层
+ * ------------------------------------------------------------------------ */
+const RECIPES = [
+    {
+        id: 'light', name: '轻甲', note: '只换标签',
+        apply: { markerMode: true, mode: 'off', reflow: false, intensity: 1 },
+    },
+    {
+        id: 'heavy', name: '重甲', note: '标记 + 谐音 + 重排',
+        apply: { markerMode: true, mode: 'homophone', reflow: true, intensity: 2 },
+    },
+    {
+        id: 'scorch', name: '焦土', note: '标记 + 拼音 + 重排',
+        apply: { markerMode: true, mode: 'pinyin', reflow: true, intensity: 3 },
+    },
+];
+
+function currentRecipeId(s) {
+    if (!s) return '';
+    for (const r of RECIPES) {
+        const a = r.apply;
+        if (s.markerMode === a.markerMode && s.mode === a.mode
+            && !!s.reflow === !!a.reflow && Number(s.intensity) === Number(a.intensity)) {
+            return r.id;
+        }
+    }
+    return '';
+}
+
+function renderRecipes() {
+    if (typeof document === 'undefined') return;
+    const box = $el('msv_recipes');
+    if (!box) return;
+    const s = cfg();
+    const cur = currentRecipeId(s);
+    box.innerHTML = RECIPES.map(function (r) {
+        const on = r.id === cur ? ' is-on' : '';
+        return '<button class="msv-chip' + on + '" type="button" data-recipe="' + r.id + '">'
+            + '<span class="msv-chip-name">' + escHtml(r.name) + '</span>'
+            + '<span class="msv-chip-note">' + escHtml(r.note) + '</span>'
+            + '</button>';
+    }).join('');
+}
+
+function applyRecipe(id) {
+    const r = RECIPES.find(function (x) { return x.id === id; });
+    const s = cfg();
+    if (!r || !s) return;
+    s.markerMode = r.apply.markerMode;
+    s.mode = r.apply.mode;
+    s.reflow = r.apply.reflow;
+    s.intensity = r.apply.intensity;
+    ruleCache = null;
+    save();
+    syncUI();
+    renderRecipes();
+    renderStats();
+}
+
+function escHtml(v) {
+    return String(v == null ? '' : v).replace(/[&<>"']/g, function (c) {
+        return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c];
+    });
+}
+
+function renderStudio() {
+    if (typeof document === 'undefined') return;   /* 纯 Node 测试环境没有 DOM */
+    const body = $el('msv_studio_body');
+    const count = $el('msv_studio_count');
+    if (!body) return;
+
+    if (!lastRun) {
+        body.innerHTML = '<div class="msv-empty">这轮还没跑</div>';
+        if (count) count.textContent = '还没跑过';
+        return;
+    }
+    if (!lastRun.detail.length) {
+        body.innerHTML = '<div class="msv-empty">这轮干净，没有要改的地方</div>';
+        if (count) count.textContent = '0 处';
+        return;
+    }
+
+    if (count) count.textContent = lastRun.hits + ' 处 · ' + lastRun.words + ' 词';
+    body.innerHTML = lastRun.detail.map(function (d, i) {
+        return '<button class="msv-hit" type="button" data-i="' + i + '">'
+            + '<span class="msv-hit-pair"><span class="msv-hit-from">' + escHtml(d.from) + '</span>'
+            + '<span class="msv-hit-arrow">→</span>'
+            + '<span class="msv-hit-to">' + escHtml(d.to) + '</span></span>'
+            + '<span class="msv-hit-rule">' + escHtml(d.rule || '') + '</span>'
+            + '</button>';
+    }).join('');
+
+    body.querySelectorAll('.msv-hit').forEach(function (b) {
+        b.addEventListener('click', function () { openDrawer(Number(b.dataset.i)); });
+    });
+}
+
+function openDrawer(i) {
+    const d = lastRun && lastRun.detail[i];
+    const box = $el('msv_drawer_body');
+    const dr = $el('msv_drawer');
+    if (!d || !box || !dr) return;
+
+    box.innerHTML = ''
+        + '<div class="msv-dl">这一处</div>'
+        + '<div class="msv-dv msv-dv-ctx">' + escHtml(d.ctx || d.from) + '</div>'
+        + '<div class="msv-dl">换成了</div>'
+        + '<div class="msv-dv msv-dv-to">' + escHtml(d.to) + '</div>'
+        + '<div class="msv-dl">哪条规则</div>'
+        + '<div class="msv-dv">' + escHtml(d.rule || '—') + '</div>';
+
+    dr.hidden = false;
+    try { dr.querySelector('.msv-drawer-panel').focus(); } catch (_) { /* ignore */ }
+}
+
+function closeDrawer() {
+    const dr = $el('msv_drawer');
+    if (dr) dr.hidden = true;
+}
 
 function buildUI() {
     const host = document.getElementById('extensions_settings2') || document.getElementById('extensions_settings');
@@ -844,120 +1098,244 @@ function buildUI() {
     wrap.className = 'inline-drawer';
     wrap.innerHTML = `
 <div class="inline-drawer-toggle inline-drawer-header">
-    <b>无我梦中 · Muga Muchū</b>
-    <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
-</div>
-<div class="inline-drawer-content">
 <div class="msv-panel">
 
     <div class="msv-head">
-        <div class="msv-title">无我梦中 <span class="msv-ver">v${VERSION}</span></div>
+        <div class="msv-topbar">
+            <div class="msv-seal" id="msv_theme" role="button" tabindex="0" title="夜 / 火">夜</div>
+            <span class="msv-title">无我梦中 <span class="msv-ver">v${VERSION}</span></span>
+            <span class="msv-lamp" id="msv_lamp" data-state="idle" title="这轮结果"></span>
+        </div>
+        <div class="msv-verdict" id="msv_verdict" data-state="idle">还没生成过</div>
         <div class="msv-sub"><span class="msv-sub-title">無我夢中 · 阿鼻叫喚</span><br><span class="msv-sub-line">让厚甲的 AI 在无我之梦里，周遭尽是阿鼻叫唤。</span><br><span class="msv-sub-sign">只改形，不改神 · by 哈基米三十一世</span></div>
     </div>
 
-    <div class="msv-grid">
-        <label class="msv-check"><input type="checkbox" id="msv_enabled"> 启用筛选</label>
-        <label class="msv-check"><input type="checkbox" id="msv_decode"> 输出还原</label>
-    </div>
+    <details class="msv-fold" open>
+        <summary class="msv-fold-head"><span class="msv-fold-tri"></span><span class="msv-fold-title">强度</span></summary>
+        <div class="msv-fold-body">
 
-    <div class="msv-section">神谕终端 · 双蛇杖</div>
-    <div id="msv_weapons" class="msv-weapons"></div>
-    <div id="msv_weapon_line" class="msv-wline">与任何武器相比，我都更擅长、更喜好使用镰刀。</div>
+            <div class="msv-row">
+                <span class="msv-label">替换方式</span>
+                <select id="msv_mode">
+                    <option value="off">只换标签（推荐）</option>
+                    <option value="semantic">语义改写（会改正文）</option>
+                    <option value="mix">混合 · 谐音+拼音</option>
+                    <option value="homophone">谐音字（思烤）</option>
+                    <option value="pinyin">拼音（si kao）</option>
+                </select>
+            </div>
 
-    <div class="msv-row">
-        <span class="msv-label">替换方式</span>
-        <select id="msv_mode">
-            <option value="off">只换标签（推荐）</option>
-            <option value="semantic">语义改写（会改正文）</option>
-            <option value="mix">混合 · 谐音+拼音</option>
-            <option value="homophone">谐音字（思烤）</option>
-            <option value="pinyin">拼音（si kao）</option>
-        </select>
-    </div>
+            <div class="msv-row">
+                <span class="msv-label">强度</span>
+                <select id="msv_intensity">
+                    <option value="1">轻 · 只碰强特征词</option>
+                    <option value="2">中 · 常规（推荐）</option>
+                    <option value="3">重 · 含弱词，会改味道</option>
+                </select>
+            </div>
 
-    <div class="msv-row">
-        <span class="msv-label">强度</span>
-        <select id="msv_intensity">
-            <option value="1">轻 · 只碰强特征词</option>
-            <option value="2">中 · 常规（推荐）</option>
-            <option value="3">重 · 含弱词，会改味道</option>
-        </select>
-    </div>
+            <div class="msv-grid">
+                <label class="msv-check"><input type="checkbox" id="msv_marker"> 标记替换</label>
+                <label class="msv-check"><input type="checkbox" id="msv_reflow"> 阅卷层</label>
+                <label class="msv-check"><input type="checkbox" id="msv_nsfw"> NSFW 词包</label>
+                <span class="msv-warn" id="msv_nsfw_hint">（模板级，自己调）</span>
+            </div>
 
-    <div class="msv-row">
-        <span class="msv-label">XML 标签</span>
-        <select id="msv_tagmode">
-            <option value="rewrite">&lt;thinking&gt; 一起换</option>
-            <option value="protect">标签原样保护</option>
-        </select>
-    </div>
+        </div>
+    </details>
 
-    <div class="msv-section">作用范围</div>
-    <div class="msv-grid">
-        <label class="msv-check"><input type="checkbox" id="msv_scope_system"> 预设 / 系统提示</label>
-        <label class="msv-check"><input type="checkbox" id="msv_scope_history"> 对话历史</label>
-        <label class="msv-check"><input type="checkbox" id="msv_scope_user"> 当前输入</label>
-        <label class="msv-check"><input type="checkbox" id="msv_code"> 保护代码块</label>
-    </div>
+    <details class="msv-fold">
+        <summary class="msv-fold-head"><span class="msv-fold-tri"></span><span class="msv-fold-title">外观</span></summary>
+        <div class="msv-fold-body">
 
-    <div class="msv-grid">
-        <label class="msv-check"><input type="checkbox" id="msv_marker"> 标记替换</label>
-        <label class="msv-check"><input type="checkbox" id="msv_reflow"> 阅卷层</label>
-        <label class="msv-check"><input type="checkbox" id="msv_nsfw"> NSFW 词包</label>
-        <span class="msv-warn" id="msv_nsfw_hint">（模板级，自己调）</span>
-    </div>
+            <div class="msv-row">
+                <span class="msv-label">XML 标签</span>
+                <select id="msv_tagmode">
+                    <option value="rewrite">&lt;thinking&gt; 一起换</option>
+                    <option value="protect">标签原样保护</option>
+                </select>
+            </div>
 
-    <div class="msv-row">
-        <span class="msv-label">保留词</span>
-        <input type="text" id="msv_keep" placeholder="逗号分隔，例：思想,意识">
-    </div>
+            <div class="msv-grid">
+                <label class="msv-check"><input type="checkbox" id="msv_code"> 保护代码块</label>
+            </div>
 
-    <div class="msv-row">
-        <span class="msv-label">盐</span>
-        <input type="text" id="msv_salt" placeholder="meow">
-        <button id="msv_reroll" class="menu_button" title="换一批谐音">🎲</button>
-    </div>
+        </div>
+    </details>
 
-    <div class="msv-section">自定义规则</div>
-    <div id="msv_rules"></div>
-    <div class="msv-row">
-        <input type="text" id="msv_from" placeholder="原词">
-        <span class="msv-arrow">→</span>
-        <input type="text" id="msv_to" placeholder="替换为">
-        <button id="msv_add" class="menu_button">加</button>
-    </div>
+    <details class="msv-fold">
+        <summary class="msv-fold-head"><span class="msv-fold-tri"></span><span class="msv-fold-title">结果</span></summary>
+        <div class="msv-fold-body">
 
-    <div class="msv-section">测试台</div>
-    <textarea id="msv_test_in" rows="3" placeholder="粘一段预设，看看会被筛成什么样"></textarea>
-    <div class="msv-row">
-        <button id="msv_test" class="menu_button">试筛</button>
-        <button id="msv_scan" class="menu_button">扫当前聊天</button>
-        <button id="msv_copymap" class="menu_button">复制映射</button>
+            <div class="msv-grid">
+                <label class="msv-check"><input type="checkbox" id="msv_enabled"> 启用筛选</label>
+                <label class="msv-check"><input type="checkbox" id="msv_decode"> 输出还原</label>
+            </div>
+
+            <div class="msv-section">作用范围</div>
+            <div class="msv-grid">
+                <label class="msv-check"><input type="checkbox" id="msv_scope_system"> 预设 / 系统提示</label>
+                <label class="msv-check"><input type="checkbox" id="msv_scope_history"> 对话历史</label>
+                <label class="msv-check"><input type="checkbox" id="msv_scope_user"> 当前输入</label>
+            </div>
+
+            <div class="msv-row">
+                <span class="msv-label">保留词</span>
+                <input type="text" id="msv_keep" placeholder="逗号分隔，例：思想,意识">
+            </div>
+
+            <div class="msv-row">
+                <span class="msv-label">盐</span>
+                <input type="text" id="msv_salt" placeholder="meow">
+                <button id="msv_reroll" class="menu_button" title="换一批谐音">🎲</button>
+            </div>
+
+        </div>
+    </details>
+
+    <details class="msv-fold">
+        <summary class="msv-fold-head"><span class="msv-fold-tri"></span><span class="msv-fold-title">方案与规则</span></summary>
+        <div class="msv-fold-body">
+
+            <div class="msv-recipes" id="msv_recipes"></div>
+
+            <div class="msv-section">自定义规则</div>
+            <div id="msv_rules"></div>
+            <div class="msv-row">
+                <input type="text" id="msv_from" placeholder="原词">
+                <span class="msv-arrow">→</span>
+                <input type="text" id="msv_to" placeholder="替换为">
+                <button id="msv_add" class="menu_button">加</button>
+            </div>
+
+        </div>
+    </details>
+
+    <details class="msv-fold">
+        <summary class="msv-fold-head"><span class="msv-fold-tri"></span><span class="msv-fold-title">其他</span></summary>
+        <div class="msv-fold-body">
+
+            <div class="msv-section">神谕终端 · 双蛇杖</div>
+            <div id="msv_weapons" class="msv-weapons"></div>
+            <div id="msv_weapon_line" class="msv-wline">与任何武器相比，我都更擅长、更喜好使用镰刀。</div>
+
+            <div class="msv-section">测试台</div>
+            <textarea id="msv_test_in" rows="3" placeholder="粘一段预设，看看会被筛成什么样"></textarea>
+            <div class="msv-row">
+                <button id="msv_test" class="menu_button">试筛</button>
+                <button id="msv_scan" class="menu_button">扫当前聊天</button>
+                <button id="msv_copymap" class="menu_button">复制映射</button>
+            </div>
+            <pre id="msv_test_out"></pre>
+
+            <div class="msv-section">更新</div>
+            <div class="msv-update">
+                <div class="msv-update-row">
+                    <span class="msv-update-cur">当前 v${VERSION}</span>
+                    <button id="msv_check_update" class="menu_button">检查更新</button>
+                </div>
+                <div id="msv_update_msg" class="msv-update-msg">不会自动覆盖，动手前会再问你一次。</div>
+                <div class="msv-update-row" id="msv_update_actions" style="display:none">
+                    <button id="msv_do_update" class="menu_button">更新到最新版本</button>
+                    <a id="msv_update_link" class="menu_button" target="_blank" rel="noopener noreferrer">打开发布页</a>
+                </div>
+            </div>
+
+        </div>
+    </details>
+
+    <div class="msv-studio">
+        <div class="msv-studio-head">
+            <span class="msv-studio-title">正文区</span>
+            <span class="msv-studio-count" id="msv_studio_count">还没跑过</span>
+        </div>
+        <div class="msv-studio-body" id="msv_studio_body"></div>
     </div>
-    <pre id="msv_test_out"></pre>
 
     <div class="msv-section">统计</div>
     <div id="msv_stats" class="msv-stats"></div>
 
+    <div class="msv-drawer" id="msv_drawer" hidden>
+        <div class="msv-drawer-mask" id="msv_drawer_mask"></div>
+        <div class="msv-drawer-panel" tabindex="-1">
+            <div class="msv-drawer-head">
+                <span>这一处</span>
+                <button class="msv-drawer-x" id="msv_drawer_close" type="button" aria-label="关闭">×</button>
+            </div>
+            <div class="msv-drawer-body" id="msv_drawer_body"></div>
+        </div>
+    </div>
+
 </div>
-</div>`;
+</div></div>`;
 
     host.appendChild(wrap);
     bindUI();
+    applyTheme();
     syncUI();
     renderRules();
     renderWeapons();
     renderStats();
+    renderVerdict();
+    renderStudio();
+    renderRecipes();
 }
 
 function bindUI() {
+    if (bindUI.bound) return;  // 防止重复绑定
+    
     const s = cfg();
-    if (!s) return;
+    if (!s) {
+        if (!bindUI.retries) bindUI.retries = 0;
+    bindUI.bound = true;  // 标记已绑定
+        if (bindUI.retries < 5) {
+            bindUI.retries++;
+            setTimeout(bindUI, 300);
+            return;
+        }
+        console.warn(LOG, 'bindUI 放弃：cfg() 始终为空');
+        return;
+    }
+    bindUI.retries = 0;
+    bindUI.bound = true;  // 标记已绑定
 
     const on = (id, ev, fn) => {
         const el = $el(id);
         if (el) el.addEventListener(ev, fn);
     };
+
+    /* 方案条：点了就换 */
+    const recipeBox = $el('msv_recipes');
+    if (recipeBox) {
+        recipeBox.addEventListener('click', (ev) => {
+            const btn = ev.target.closest('.msv-chip');
+            if (btn) applyRecipe(btn.dataset.recipe);
+        });
+    }
+
+    /* 抽屉 */
+    on('msv_drawer_close', 'click', closeDrawer);
+    on('msv_drawer_mask', 'click', closeDrawer);
+    if (!bindUI.escBound) {
+        const escHandler = (ev) => { if (ev.key === 'Escape') closeDrawer(); };
+        document.addEventListener('keydown', escHandler);
+        bindUI.escBound = true;
+    }
+
+    /* 主题印章：夜 ↔ 火 */
+    const sealEl = $el('msv_theme');
+    if (sealEl) {
+        const flipTheme = () => {
+            const cur = resolveTheme(s);
+            s.theme = cur === 'fire' ? 'night' : 'fire';
+            save();
+            applyTheme();
+        };
+        sealEl.addEventListener('click', flipTheme);
+        sealEl.addEventListener('keydown', (ev) => {
+            if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); flipTheme(); }
+        });
+    }
 
     /* 总开关：改完立刻回写，出错就回滚 */
     on('msv_enabled', 'change', (e) => { s.enabled = !!e.target.checked; save(); renderStats(); });
@@ -1052,6 +1430,9 @@ function bindUI() {
             : '—— 当前聊天里没有命中词 ——';
     });
 
+    on('msv_check_update', 'click', checkUpdate);
+    on('msv_do_update', 'click', doUpdate);
+
     on('msv_copymap', 'click', async () => {
         const lines = [...activeMap.entries()].map(([k, v]) => `${k} → ${v}`);
         if (!lines.length) { try { toastr?.info?.('上一次请求没有触发替换喵'); } catch (_) { /* ignore */ } return; }
@@ -1062,6 +1443,111 @@ function bindUI() {
     });
 }
 
+
+/* ---------------------------------------------------------------------------
+ * 1e. 手动更新
+ *     只做两件事：读 GitHub 最新版本；调用酒馆自己的扩展更新接口。
+ *     不写文件、不拿 token、不自动更新。
+ * ------------------------------------------------------------------------ */
+
+let latestTag = '';
+
+function parseVer(v) {
+    return String(v || '').replace(/^v/i, '').split(/[.\-+]/).map(x => parseInt(x, 10) || 0);
+}
+
+function newerThan(a, b) {
+    const x = parseVer(a), y = parseVer(b);
+    const n = Math.max(x.length, y.length);
+    for (let i = 0; i < n; i++) {
+        const p = x[i] || 0, q = y[i] || 0;
+        if (p > q) return true;
+        if (p < q) return false;
+    }
+    return false;
+}
+
+function updateMsg(text, kind) {
+    const el = $el('msv_update_msg');
+    if (!el) return;
+    el.textContent = text;
+    el.dataset.kind = kind || '';
+}
+
+function stHeaders() {
+    try {
+        if (typeof getRequestHeaders === 'function') return getRequestHeaders();
+    } catch (_) { /* ignore */ }
+    return { 'Content-Type': 'application/json' };
+}
+
+async function extApi(path, body) {
+    const res = await fetch(path, { method: 'POST', headers: stHeaders(), body: JSON.stringify(body) });
+    let data = null;
+    try { data = await res.json(); } catch (_) { /* ignore */ }
+    return { ok: res.ok, status: res.status, data };
+}
+
+async function checkUpdate() {
+    const btn = $el('msv_check_update');
+    if (btn) btn.disabled = true;
+    updateMsg('正在问 GitHub…', 'busy');
+    try {
+        const res = await fetch(RELEASE_API, { headers: { Accept: 'application/vnd.github+json' } });
+        if (!res.ok) throw new Error('GitHub ' + res.status);
+        const data = await res.json();
+        latestTag = String(data.tag_name || '').replace(/^v/i, '');
+        const actions = $el('msv_update_actions');
+        const link = $el('msv_update_link');
+        if (link) link.href = data.html_url || REPO_URL;
+        if (latestTag && newerThan(latestTag, VERSION)) {
+            updateMsg('发现新版本 v' + latestTag + '（当前 v' + VERSION + '）', 'new');
+            if (actions) actions.style.display = '';
+        } else {
+            updateMsg('已是最新版本 v' + VERSION, 'ok');
+            if (actions) actions.style.display = 'none';
+        }
+    } catch (e) {
+        updateMsg('检查失败：' + ((e && e.message) || '网络不通'), 'fail');
+        const actions = $el('msv_update_actions');
+        if (actions) actions.style.display = '';
+        const link = $el('msv_update_link');
+        if (link && !link.getAttribute('href')) link.href = REPO_URL;
+    } finally {
+        if (btn) btn.disabled = false;
+    }
+}
+
+async function doUpdate() {
+    const btn = $el('msv_do_update');
+    if (btn) btn.disabled = true;
+    updateMsg('正在让酒馆拉取更新…', 'busy');
+    try {
+        let type = null, info = null;
+        for (const g of [true, false]) {
+            const r = await extApi('/api/extensions/version', { extensionName: 'muga-muchu', global: g });
+            if (r.ok) { type = g; info = r.data; break; }
+        }
+        if (type === null) {
+            updateMsg('这个酒馆不支持扩展自更新，请点「打开发布页」手动更新。', 'fail');
+            return;
+        }
+        if (info && info.isUpToDate) {
+            updateMsg('已经是最新的了，刷新页面即可。', 'ok');
+            return;
+        }
+        const r2 = await extApi('/api/extensions/update', { extensionName: 'muga-muchu', global: type });
+        if (!r2.ok) {
+            updateMsg('更新失败：' + ((r2.data && r2.data.message) || ('HTTP ' + r2.status)), 'fail');
+            return;
+        }
+        updateMsg('更新完成，刷新页面后生效。', 'ok');
+    } catch (e) {
+        updateMsg('更新出错：' + ((e && e.message) || '未知错误'), 'fail');
+    } finally {
+        if (btn) btn.disabled = false;
+    }
+}
 
 /* ---------------------------------------------------------------------------
  * 神谕终端面板
@@ -1217,6 +1703,7 @@ jQuery(async () => {
     try {
         c.eventSource.on(ev('CHAT_COMPLETION_PROMPT_READY', 'chat_completion_prompt_ready'), onPromptReady);
         c.eventSource.on(ev('MESSAGE_RECEIVED', 'message_received'), onMessageReceived);
+        c.eventSource.on(ev('MESSAGE_SWIPED', 'message_swiped'), onMessageReceived);
         c.eventSource.on(ev('GENERATION_ENDED', 'generation_ended'), onGenerationEnded);
         c.eventSource.on(ev('GENERATION_STARTED', 'generation_started'), onGenerationStarted);
     } catch (e) {

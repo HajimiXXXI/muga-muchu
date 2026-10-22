@@ -32,7 +32,7 @@
 .msv-section {
     margin-top: 8px;
     padding-top: 6px;
-    border-top: 1px dashed rgba(255, 255, 255, 0.12);
+    border-top: 1px dashed rgba(var(--msv-hi-rgb), 0.12);
     font-weight: 600;
     opacity: 0.85;
     font-size: 0.88em;
@@ -93,7 +93,7 @@
     overflow: auto;
     white-space: pre-wrap;
     word-break: break-word;
-    background: rgba(0, 0, 0, 0.22);
+    background: rgba(var(--msv-shadow-rgb), 0.22);
     border-radius: 4px;
     font-size: 0.84em;
     display: none;
@@ -153,9 +153,9 @@
     align-items: flex-start;
     gap: 1px;
     padding: 5px 7px;
-    border: 1px solid rgba(255, 255, 255, 0.14);
+    border: 1px solid rgba(var(--msv-hi-rgb), 0.14);
     border-radius: 5px;
-    background: rgba(255, 255, 255, 0.03);
+    background: rgba(var(--msv-hi-rgb), 0.03);
     cursor: pointer;
     font-size: 0.78em;
     line-height: 1.25;
@@ -164,8 +164,8 @@
 }
 
 .msv-wpn:hover {
-    border-color: rgba(255, 255, 255, 0.35);
-    background: rgba(255, 255, 255, 0.07);
+    border-color: rgba(var(--msv-hi-rgb), 0.35);
+    background: rgba(var(--msv-hi-rgb), 0.07);
 }
 
 .msv-wpn.active {
@@ -204,16 +204,9 @@
  * ================================================================ */
 
 .msv-panel {
-    --msv-ink:        #14100d;
-    --msv-paper:      #d7c7a6;
-    --msv-paper-dim:  rgba(215, 199, 166, .58);
-    --msv-soot:       #2a211b;
-    --msv-ember:      #c87845;
-    --msv-vermil:     #8b302d;
-    --msv-blood:      #a9443d;
-    --msv-ash:        rgba(190, 182, 165, .30);
-    --msv-line:       rgba(215, 199, 166, .14);
-    --msv-line-soft:  rgba(215, 199, 166, .075);
+    --msv-ink:        var(--msv-bg);
+    --msv-vermil:     var(--msv-vermil-deep);
+    --msv-line:       rgba(var(--msv-paper-rgb), .14);
 
     gap: 9px;
     padding: 12px 12px 14px;
@@ -221,14 +214,14 @@
     font-size: .95em;
     color: var(--msv-paper);
     background:
-        radial-gradient(120% 80% at 0% 0%, rgba(139, 48, 45, .10), transparent 55%),
-        radial-gradient(100% 70% at 100% 100%, rgba(200, 120, 69, .07), transparent 60%),
-        linear-gradient(158deg, rgba(20, 16, 13, .92), rgba(26, 20, 16, .88));
+        radial-gradient(120% 80% at 0% 0%, rgba(var(--msv-vermil-rgb), .10), transparent 55%),
+        radial-gradient(100% 70% at 100% 100%, rgba(var(--msv-ember-rgb), .07), transparent 60%),
+        linear-gradient(158deg, rgba(20, 16, 13, .92), rgba(var(--msv-layer-rgb), .88));
     border: 1px solid var(--msv-line-soft);
     box-shadow:
-        inset 0 1px 0 rgba(215, 199, 166, .05),
-        inset 0 0 42px rgba(0, 0, 0, .35),
-        0 4px 16px rgba(0, 0, 0, .28);
+        inset 0 1px 0 rgba(var(--msv-paper-rgb), .05),
+        inset 0 0 42px rgba(var(--msv-shadow-rgb), .35),
+        0 4px 16px rgba(var(--msv-shadow-rgb), .28);
 }
 
 /* ——— 匾额 ——— */
@@ -236,13 +229,13 @@
     position: relative;
     padding: 12px 14px 11px 16px;
     margin: 0 0 3px;
-    border: 1px solid rgba(215, 199, 166, .12);
+    border: 1px solid rgba(var(--msv-paper-rgb), .12);
     border-left: 3px solid var(--msv-vermil);
     border-radius: 6px;
     background:
-        linear-gradient(135deg, rgba(139, 48, 45, .16), rgba(20, 16, 13, .25) 62%),
-        linear-gradient(180deg, rgba(215, 199, 166, .035), transparent);
-    box-shadow: inset 0 1px 0 rgba(215, 199, 166, .07);
+        linear-gradient(135deg, rgba(var(--msv-vermil-rgb), .16), rgba(20, 16, 13, .25) 62%),
+        linear-gradient(180deg, rgba(var(--msv-paper-rgb), .035), transparent);
+    box-shadow: inset 0 1px 0 rgba(var(--msv-paper-rgb), .07);
 }
 .msv-head::after {
     content: '';
@@ -251,14 +244,14 @@
     width: 34px;
     height: 34px;
     border-radius: 50%;
-    background: radial-gradient(circle, rgba(169, 68, 61, .22), transparent 68%);
+    background: radial-gradient(circle, rgba(var(--msv-blood-rgb), .22), transparent 68%);
     pointer-events: none;
 }
 .msv-title {
     font-size: 1.12em;
     letter-spacing: 2.5px;
-    color: #e8dcc4;
-    text-shadow: 0 0 10px rgba(139, 48, 45, .28);
+    color: var(--msv-paper-hi);
+    text-shadow: 0 0 10px rgba(var(--msv-vermil-rgb), .28);
 }
 .msv-ver {
     margin-left: 6px;
@@ -309,7 +302,7 @@
     width: 6px;
     height: 1px;
     background: var(--msv-vermil);
-    box-shadow: 0 3px 0 rgba(139, 48, 45, .55);
+    box-shadow: 0 3px 0 rgba(var(--msv-vermil-rgb), .55);
 }
 
 /* ——— 表单层 ——— */
@@ -325,15 +318,15 @@
 .msv-row input[type="text"] {
     min-height: 32px;
     border-radius: 4px;
-    background: rgba(0, 0, 0, .28);
+    background: rgba(var(--msv-shadow-rgb), .28);
     border: 1px solid var(--msv-line-soft);
     color: var(--msv-paper);
 }
 .msv-row select:focus,
 .msv-row input[type="text"]:focus {
-    border-color: rgba(200, 120, 69, .5);
+    border-color: rgba(var(--msv-ember-rgb), .5);
     outline: none;
-    box-shadow: 0 0 0 1px rgba(200, 120, 69, .16);
+    box-shadow: 0 0 0 1px rgba(var(--msv-ember-rgb), .16);
 }
 .msv-check {
     min-height: 32px;
@@ -344,15 +337,15 @@
     transition: border-color .15s ease, background .15s ease;
 }
 .msv-check:hover {
-    border-color: rgba(215, 199, 166, .22);
-    background: rgba(215, 199, 166, .035);
+    border-color: rgba(var(--msv-paper-rgb), .22);
+    background: rgba(var(--msv-paper-rgb), .035);
 }
 .msv-check input {
     width: 16px;
     height: 16px;
     accent-color: var(--msv-vermil);
 }
-.msv-arrow { color: rgba(215, 199, 166, .35); }
+.msv-arrow { color: rgba(var(--msv-paper-rgb), .35); }
 
 /* ——— 六把武器：不是装备栏，是六道被火烤过的刀痕 ——— */
 .msv-weapons {
@@ -369,7 +362,7 @@
     border: 1px solid var(--msv-line);
     border-radius: 6px;
     background:
-        linear-gradient(152deg, rgba(215, 199, 166, .055), rgba(0, 0, 0, .18) 70%);
+        linear-gradient(152deg, rgba(var(--msv-paper-rgb), .055), rgba(var(--msv-shadow-rgb), .18) 70%);
     color: var(--msv-paper);
     font-size: .88em;
     line-height: 1.34;
@@ -386,32 +379,32 @@
     bottom: 10px;
     width: 2px;
     border-radius: 2px;
-    background: rgba(215, 199, 166, .16);
+    background: rgba(var(--msv-paper-rgb), .16);
     transition: background .16s ease, box-shadow .16s ease;
 }
 .msv-wpn:hover {
-    border-color: rgba(215, 199, 166, .26);
-    background: linear-gradient(152deg, rgba(215, 199, 166, .085), rgba(0, 0, 0, .18) 70%);
+    border-color: rgba(var(--msv-paper-rgb), .26);
+    background: linear-gradient(152deg, rgba(var(--msv-paper-rgb), .085), rgba(var(--msv-shadow-rgb), .18) 70%);
 }
 .msv-wpn:active { transform: scale(.986); }
 
 .msv-wpn.active {
-    border-color: rgba(169, 68, 61, .62);
+    border-color: rgba(var(--msv-blood-rgb), .62);
     background:
-        radial-gradient(120% 100% at 0% 0%, rgba(169, 68, 61, .20), transparent 62%),
-        linear-gradient(152deg, rgba(215, 199, 166, .06), rgba(0, 0, 0, .2) 70%);
+        radial-gradient(120% 100% at 0% 0%, rgba(var(--msv-blood-rgb), .20), transparent 62%),
+        linear-gradient(152deg, rgba(var(--msv-paper-rgb), .06), rgba(var(--msv-shadow-rgb), .2) 70%);
     box-shadow:
-        inset 0 0 22px rgba(139, 48, 45, .16),
-        0 2px 10px rgba(0, 0, 0, .22);
+        inset 0 0 22px rgba(var(--msv-vermil-rgb), .16),
+        0 2px 10px rgba(var(--msv-shadow-rgb), .22);
 }
 .msv-wpn.active::before {
     background: var(--msv-blood);
-    box-shadow: 0 0 9px rgba(169, 68, 61, .55);
+    box-shadow: 0 0 9px rgba(var(--msv-blood-rgb), .55);
 }
 
 .msv-wpn b {
     font-size: 1.09em;
-    color: #e8dcc4;
+    color: var(--msv-paper-hi);
     letter-spacing: 1.4px;
     font-weight: 600;
 }
@@ -435,10 +428,10 @@
 .msv-wline {
     margin: 2px 1px 1px;
     padding: 9px 12px 9px 13px;
-    border-left: 2px solid rgba(169, 68, 61, .55);
+    border-left: 2px solid rgba(var(--msv-blood-rgb), .55);
     border-radius: 0 5px 5px 0;
-    background: linear-gradient(90deg, rgba(139, 48, 45, .09), transparent 72%);
-    color: rgba(215, 199, 166, .72);
+    background: linear-gradient(90deg, rgba(var(--msv-vermil-rgb), .09), transparent 72%);
+    color: rgba(var(--msv-paper-rgb), .72);
     font-style: italic;
     opacity: 1;
     line-height: 1.6;
@@ -448,7 +441,7 @@
 /* ——— 测试台 / 统计 / 规则 ——— */
 #msv_test_in {
     border-radius: 4px;
-    background: rgba(0, 0, 0, .26);
+    background: rgba(var(--msv-shadow-rgb), .26);
     border: 1px solid var(--msv-line-soft);
     color: var(--msv-paper);
 }
@@ -456,15 +449,15 @@
     padding: 8px 10px;
     border: 1px solid var(--msv-line-soft);
     border-radius: 5px;
-    background: rgba(0, 0, 0, .26);
-    color: rgba(215, 199, 166, .78);
+    background: rgba(var(--msv-shadow-rgb), .26);
+    color: rgba(var(--msv-paper-rgb), .78);
 }
 .msv-stats {
     color: rgba(190, 182, 165, .62);
     opacity: 1;
     font-variant-numeric: tabular-nums;
 }
-.msv-rule .msv-rule-src { color: rgba(215, 199, 166, .82); opacity: 1; }
+.msv-rule .msv-rule-src { color: rgba(var(--msv-paper-rgb), .82); opacity: 1; }
 .msv-rule .msv-rule-to  { color: var(--msv-ember); opacity: .92; }
 .msv-rule .msv-del:hover { color: var(--msv-blood); }
 .msv-warn {
@@ -488,13 +481,13 @@
  * ================================================================ */
 .msv-panel {
     --muga-ink: rgba(17, 14, 15, .78);
-    --muga-paper: #d7c7a6;
+    --muga-paper: var(--msv-paper);
     --muga-ash: #aaa193;
     --muga-umber: #6d4b38;
     --muga-vermilion: #9b3f35;
-    --muga-ember: #c87845;
-    --muga-line: rgba(215, 199, 166, .18);
-    --muga-soft-line: rgba(215, 199, 166, .09);
+    --muga-ember: var(--msv-ember);
+    --muga-line: rgba(var(--msv-paper-rgb), .18);
+    --muga-soft-line: rgba(var(--msv-paper-rgb), .09);
     --muga-quote: var(--SmartThemeQuoteColor, #c58b5a);
     gap: 9px;
     color: var(--muga-paper);
@@ -509,10 +502,10 @@
     border-left: 3px solid var(--muga-vermilion);
     border-radius: 3px 8px 8px 3px;
     background:
-        linear-gradient(104deg, rgba(139,48,45,.15), transparent 42%),
-        repeating-linear-gradient(166deg, transparent 0 18px, rgba(215,199,166,.025) 19px 20px),
+        linear-gradient(104deg, rgba(var(--msv-vermil-rgb), .15), transparent 42%),
+        repeating-linear-gradient(166deg, transparent 0 18px, rgba(var(--msv-paper-rgb), .025) 19px 20px),
         rgba(20,16,16,.68);
-    box-shadow: inset 0 1px 0 rgba(255,255,255,.045), 0 4px 14px rgba(0,0,0,.28);
+    box-shadow: inset 0 1px 0 rgba(var(--msv-hi-rgb), .045), 0 4px 14px rgba(var(--msv-shadow-rgb), .28);
 }
 .msv-head::after {
     content: '';
@@ -524,7 +517,7 @@
     background: var(--muga-ember);
     opacity: .34;
     transform: rotate(-17deg);
-    box-shadow: -17px 8px 0 rgba(155,63,53,.35), -31px 16px 0 rgba(215,199,166,.12);
+    box-shadow: -17px 8px 0 rgba(155,63,53,.35), -31px 16px 0 rgba(var(--msv-paper-rgb), .12);
 }
 .msv-title { color: var(--muga-paper); font-size: 1.1em; letter-spacing: 1.4px; }
 .msv-ver { color: var(--muga-ember); opacity: .9; }
@@ -573,7 +566,7 @@
     padding: 9px 10px 9px 14px;
     border: 1px solid var(--muga-line);
     border-radius: 3px 7px 7px 3px;
-    background: linear-gradient(145deg, rgba(215,199,166,.065), rgba(17,14,15,.16));
+    background: linear-gradient(145deg, rgba(var(--msv-paper-rgb), .065), rgba(17,14,15,.16));
     color: var(--muga-paper);
     font-size: .88em;
     line-height: 1.34;
@@ -589,14 +582,14 @@
     border-radius: 0 2px 2px 0;
     background: var(--muga-umber);
 }
-.msv-wpn:hover { border-color: rgba(200,120,69,.55); background: rgba(155,63,53,.1); }
+.msv-wpn:hover { border-color: rgba(var(--msv-ember-rgb), .55); background: rgba(155,63,53,.1); }
 .msv-wpn:active { transform: scale(.985); }
 .msv-wpn.active {
-    border-color: rgba(200,120,69,.75);
-    background: linear-gradient(145deg, rgba(155,63,53,.2), rgba(200,120,69,.075));
-    box-shadow: inset 0 0 0 1px rgba(200,120,69,.1), 0 3px 12px rgba(0,0,0,.24);
+    border-color: rgba(var(--msv-ember-rgb), .75);
+    background: linear-gradient(145deg, rgba(155,63,53,.2), rgba(var(--msv-ember-rgb), .075));
+    box-shadow: inset 0 0 0 1px rgba(var(--msv-ember-rgb), .1), 0 3px 12px rgba(var(--msv-shadow-rgb), .24);
 }
-.msv-wpn.active::before { background: var(--muga-ember); box-shadow: 0 0 8px rgba(200,120,69,.32); }
+.msv-wpn.active::before { background: var(--muga-ember); box-shadow: 0 0 8px rgba(var(--msv-ember-rgb), .32); }
 .msv-wpn b { color: var(--muga-paper); font-size: 1.08em; letter-spacing: .5px; }
 .msv-wpn span.msv-wpn-type { color: var(--muga-ember); opacity: .9; font-size: .84em; }
 .msv-wpn em.msv-wpn-detail { color: var(--muga-ash); opacity: .8; font-size: .78em; font-style: normal; }
@@ -618,4 +611,521 @@
     .msv-wpn { min-height: 80px; padding-left: 13px; }
     .msv-wpn em.msv-wpn-detail { font-size: .74em; }
     .msv-label { flex-basis: 64px; }
+}
+
+/* ---- v1.9.0 · 手动更新 ---- */
+.msv-update {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 2px 2px 0;
+}
+.msv-update-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+}
+.msv-update-cur {
+    color: var(--muga-ash, rgba(190,182,165,.9));
+    font-size: .88em;
+    letter-spacing: .5px;
+}
+.msv-update-msg {
+    color: var(--muga-ash, rgba(190,182,165,.85));
+    font-size: .84em;
+    line-height: 1.5;
+    min-height: 1.5em;
+}
+.msv-update-msg[data-kind="new"] { color: var(--muga-ember, var(--msv-ember)); }
+.msv-update-msg[data-kind="ok"] { color: #8fae86; }
+.msv-update-msg[data-kind="fail"] { color: #c76b63; }
+.msv-update-msg[data-kind="busy"] { opacity: .8; }
+.msv-update .menu_button { min-height: 30px; }
+.msv-update a.menu_button { display: inline-flex; align-items: center; text-decoration: none; }
+@media (max-width: 420px) {
+    .msv-update-row { gap: 6px; }
+    .msv-update .menu_button { min-height: 34px; }
+}
+
+/* ================================================================
+ * 2.0 双场景主题
+ *   夜  = 良秀的画室：烛、未干的墨、窗外的黑
+ *   火  = 槟榔毛车烧起来那一夜：整间屋子被照得发白
+ * 只覆盖 rgb 分量与少量关键色，原有 656 行规则不动。
+ * ================================================================ */
+
+.msv-panel[data-msv-theme="night"] {
+    --msv-bg-rgb:     20, 16, 13;
+    --msv-paper-rgb:  215, 199, 166;
+    --msv-layer-rgb:  26, 20, 16;
+    --msv-vermil-rgb: 168, 67, 60;
+    --msv-blood-rgb:  169, 68, 61;
+    --msv-ember-rgb:  200, 120, 69;
+    --msv-hi-rgb:     255, 255, 255;
+    --msv-shadow-rgb: 0, 0, 0;
+
+    --msv-bg:          #14100d;
+    --msv-paper:       #d7c7a6;
+    --msv-paper-hi:    #e8dcc4;
+    --msv-layer:       #2a211b;
+    --msv-vermil:      #a8433c;
+    --msv-vermil-deep: #8b302d;
+    --msv-blood:       #a9443d;
+    --msv-ember:       #c87845;
+}
+
+.msv-panel[data-msv-theme="fire"] {
+    --msv-bg-rgb:     246, 231, 205;
+    --msv-paper-rgb:  43, 26, 18;
+    --msv-layer-rgb:  239, 217, 184;
+    --msv-vermil-rgb: 178, 58, 42;
+    --msv-blood-rgb:  160, 58, 48;
+    --msv-ember-rgb:  212, 120, 47;
+    --msv-hi-rgb:     255, 252, 245;
+    --msv-shadow-rgb: 120, 60, 20;
+
+    --msv-bg:          #f6e7cd;
+    --msv-paper:       #2b1a12;
+    --msv-paper-hi:    #1f120c;
+    --msv-layer:       #efd9b8;
+    --msv-vermil:      #b23a2a;
+    --msv-vermil-deep: #8b302d;
+    --msv-blood:       #a03a30;
+    --msv-ember:       #d4782f;
+}
+
+/* ---------------------------------------------------------------
+ * 2.0 主题印章（标题右上，点击夜/火切换）
+ * --------------------------------------------------------------- */
+.msv-head {
+    position: relative;
+    padding-right: 30px;
+}
+
+.msv-seal {
+    position: absolute;
+    right: 0;
+    top: 0;
+    width: 20px;
+    height: 20px;
+    line-height: 18px;
+    text-align: center;
+    font-size: 11px;
+    font-family: "Songti SC", "STSong", "Noto Serif CJK SC", "SimSun", serif;
+    color: var(--msv-vermil, #a8433c);
+    border: 1px solid var(--msv-vermil, #a8433c);
+    border-radius: 1px;
+    cursor: pointer;
+    user-select: none;
+    opacity: 0.85;
+    transition: opacity 0.15s ease, background 0.15s ease;
+}
+
+.msv-seal::after {
+    content: "";
+    position: absolute;
+    inset: -12px;
+}
+
+.msv-seal:hover,
+.msv-seal:focus-visible {
+    opacity: 1;
+    outline: none;
+    background: rgba(var(--msv-vermil-rgb), 0.10);
+}
+
+/* ---------------------------------------------------------------
+ * 2.0 场景底色：夜=画室的暗，火=焚车那一夜的亮
+ * 面板自己承担底色，主题才有落点
+ * --------------------------------------------------------------- */
+.msv-panel[data-msv-theme] {
+    background: var(--msv-bg);
+    border-radius: 2px;
+    padding: 12px 12px 14px;
+    color: var(--msv-paper);
+    transition: background 0.25s ease, color 0.25s ease;
+}
+
+.msv-panel[data-msv-theme="fire"] {
+    box-shadow: inset 0 0 0 1px rgba(var(--msv-vermil-rgb), 0.18);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .msv-panel[data-msv-theme] { transition: none; }
+}
+
+/* ---------------------------------------------------------------
+ * 2.0 顶栏：标题 / 印章 / 状态灯 / 这轮结果
+ * --------------------------------------------------------------- */
+.msv-head {
+    padding-right: 0;
+}
+
+.msv-topbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.msv-topbar .msv-title {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.msv-seal {
+    position: relative;   /* ::after 的 44px 热区要相对印章定位 */
+    flex: 0 0 auto;
+    right: auto;          /* 清掉基础规则里的 absolute 偏移 */
+    top: auto;
+}
+
+.msv-lamp {
+    position: relative;
+    flex: 0 0 auto;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--msv-paper);
+    opacity: 0.35;
+}
+
+.msv-lamp::after {
+    content: "";
+    position: absolute;
+    inset: -17px;
+}
+
+.msv-lamp[data-state="ok"] { background: #6e7f6a; opacity: 1; }
+.msv-lamp[data-state="shell"],
+.msv-lamp[data-state="short"] { background: var(--msv-ember); opacity: 1; }
+.msv-lamp[data-state="refuse"],
+.msv-lamp[data-state="empty"] { background: var(--msv-vermil); opacity: 1; }
+
+.msv-verdict {
+    margin-top: 3px;
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--msv-paper);
+    opacity: 0.62;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.msv-verdict[data-state="refuse"],
+.msv-verdict[data-state="empty"] {
+    color: var(--msv-vermil);
+    opacity: 1;
+}
+
+.msv-verdict[data-state="shell"],
+.msv-verdict[data-state="short"] {
+    color: var(--msv-ember);
+    opacity: 1;
+}
+
+/* ---------------------------------------------------------------
+ * 2.0 正文区：这一轮改了什么
+ * --------------------------------------------------------------- */
+.msv-studio {
+    margin: 8px 0 4px;
+    border: 1px solid var(--msv-line);
+    border-radius: 2px;
+    background: var(--msv-layer);
+}
+
+.msv-studio-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 6px 10px;
+    border-bottom: 1px solid var(--msv-line);
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    opacity: 0.85;
+}
+
+.msv-studio-title {
+    font-family: "Songti SC", "STSong", "Noto Serif CJK SC", serif;
+}
+
+.msv-studio-count {
+    font-size: 11px;
+    opacity: 0.7;
+    letter-spacing: 0;
+}
+
+.msv-studio-body {
+    max-height: 44vh;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 4px 6px 6px;
+}
+
+.msv-hit {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    width: 100%;
+    min-height: 40px;
+    padding: 6px 8px 6px 10px;
+    margin: 2px 0;
+    background: transparent;
+    border: 0;
+    border-left: 2px solid var(--msv-vermil);
+    color: var(--msv-paper);
+    font-size: 12px;
+    text-align: left;
+    cursor: pointer;
+}
+
+.msv-hit:hover,
+.msv-hit:focus-visible {
+    background: rgba(var(--msv-vermil-rgb), 0.10);
+    outline: none;
+}
+
+.msv-hit-pair {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+}
+
+.msv-hit-from {
+    text-decoration: line-through;
+    opacity: 0.6;
+}
+
+.msv-hit-arrow {
+    color: var(--msv-vermil);
+}
+
+.msv-hit-to {
+    color: var(--msv-ember);
+}
+
+.msv-hit-rule {
+    flex: 0 0 auto;
+    font-size: 10px;
+    opacity: 0.5;
+}
+
+.msv-empty {
+    padding: 14px 10px;
+    font-size: 12px;
+    opacity: 0.55;
+    text-align: center;
+}
+
+/* ---------------------------------------------------------------
+ * 2.0 抽屉
+ * --------------------------------------------------------------- */
+.msv-drawer {
+    position: fixed;
+    inset: 0;
+    z-index: 30000;
+}
+
+.msv-drawer[hidden] {
+    display: none;
+}
+
+.msv-drawer-mask {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.45);
+}
+
+.msv-drawer-panel {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: min(92vw, 420px);
+    background: var(--msv-bg);
+    color: var(--msv-paper);
+    border-left: 1px solid rgba(var(--msv-vermil-rgb), 0.35);
+    display: flex;
+    flex-direction: column;
+    animation: msv-slide-in 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes msv-slide-in {
+    from { transform: translateX(100%); }
+    to { transform: translateX(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .msv-drawer-panel { animation: none; }
+}
+
+.msv-drawer-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--msv-line);
+    font-size: 13px;
+    letter-spacing: 0.08em;
+}
+
+.msv-drawer-x {
+    width: 36px;
+    height: 36px;
+    border: 0;
+    background: transparent;
+    color: var(--msv-paper);
+    font-size: 20px;
+    line-height: 1;
+    cursor: pointer;
+    opacity: 0.7;
+}
+
+.msv-drawer-x:hover {
+    opacity: 1;
+}
+
+.msv-drawer-body {
+    padding: 14px;
+    overflow-y: auto;
+    flex: 1;
+    min-height: 0;
+    font-size: 13px;
+    line-height: 1.7;
+}
+
+.msv-dl {
+    font-size: 11px;
+    opacity: 0.5;
+    margin-top: 12px;
+    letter-spacing: 0.08em;
+}
+
+.msv-dl:first-child {
+    margin-top: 0;
+}
+
+.msv-dv {
+    margin-top: 2px;
+    word-break: break-word;
+}
+
+.msv-dv-ctx {
+    border-left: 2px solid var(--msv-vermil);
+    padding-left: 8px;
+}
+
+.msv-dv-to {
+    color: var(--msv-ember);
+}
+
+/* ---------------------------------------------------------------
+ * 2.0 方案条：三套配方，点了就换
+ * --------------------------------------------------------------- */
+.msv-recipes {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    margin: 6px 0 8px;
+}
+
+.msv-chip {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+    min-height: 44px;
+    padding: 6px 8px;
+    background: transparent;
+    border: 1px solid var(--msv-line);
+    border-radius: 2px;
+    color: var(--msv-paper);
+    text-align: left;
+    cursor: pointer;
+    transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.msv-chip-name {
+    font-size: 13px;
+    letter-spacing: 0.1em;
+    font-family: "Songti SC", "STSong", "Noto Serif CJK SC", serif;
+    line-height: 1.3;
+}
+
+.msv-chip-note {
+    font-size: 10px;
+    opacity: 0.55;
+    line-height: 1.2;
+}
+
+.msv-chip:hover,
+.msv-chip:focus-visible {
+    border-color: rgba(var(--msv-vermil-rgb), 0.55);
+    outline: none;
+}
+
+.msv-chip.is-on {
+    border: 1.5px solid var(--msv-vermil);
+    background: rgba(var(--msv-ember-rgb), 0.12);
+}
+
+.msv-chip.is-on .msv-chip-name {
+    font-weight: 600;
+}
+
+/* ---------------------------------------------------------------
+ * 2.0 设置折叠：五组分区，只开第一组
+ * --------------------------------------------------------------- */
+.msv-fold {
+    margin: 8px 0;
+    border: 1px solid var(--msv-line);
+    border-radius: 2px;
+    background: var(--msv-layer);
+}
+
+.msv-fold-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    cursor: pointer;
+    user-select: none;
+    list-style: none;
+}
+
+.msv-fold-head::-webkit-details-marker {
+    display: none;
+}
+
+.msv-fold-tri {
+    width: 0;
+    height: 0;
+    border-left: 5px solid var(--msv-paper);
+    border-top: 3px solid transparent;
+    border-bottom: 3px solid transparent;
+    opacity: 0.6;
+    transition: transform 0.15s ease;
+}
+
+.msv-fold[open] .msv-fold-tri {
+    transform: rotate(90deg);
+}
+
+.msv-fold-title {
+    font-size: 13px;
+    letter-spacing: 0.1em;
+    font-family: "Songti SC", "STSong", "Noto Serif CJK SC", serif;
+    opacity: 0.85;
+}
+
+.msv-fold-body {
+    padding: 4px 10px 10px;
+    border-top: 1px solid var(--msv-line);
 }
