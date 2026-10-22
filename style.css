@@ -811,6 +811,12 @@
     background: var(--msv-paper);
     opacity: 0.35;
 }
+.msv-lamp[data-state="idle"] {
+    background: var(--msv-ember, #e07844);
+    opacity: 0.25;
+    box-shadow: 0 0 0 1px rgba(var(--msv-paper-rgb), 0.3);
+}
+
 
 .msv-lamp::after {
     content: "";
