@@ -32,6 +32,31 @@ const REPO_URL = 'https://github.com/' + REPO;
 const RELEASE_API = 'https://api.github.com/repos/' + REPO + '/releases/latest';
 
 /* ---------------------------------------------------------------------------
+ * 0.1 保留词正则缓存（patch3）
+ *   keepList 在 encodeText 里每条 message 每轮都要过一遍，原先每次都
+ *   new RegExp(escapeRe(k),'g')，属高频重复编译。这里按「保留词」缓存到
+ *   模块级，只在首次遇到该词时编译一次。
+ *   stash() 内部是 str.replace(re, fn)，replace 会自己把 lastIndex 归零，
+ *   所以复用带 g 标志的正则是安全的，不会串位置。
+ * ------------------------------------------------------------------------ */
+const keepReCache = new Map();          /* 保留词 → /词/g，模块级复用 */
+const KEEP_RE_MAX = 512;                /* 上限，防用户乱填把内存撑爆 */
+
+function keepRe(k) {
+    const hit = keepReCache.get(k);
+    if (hit) return hit;
+    let re;
+    try {
+        re = new RegExp(escapeRe(k), 'g');
+    } catch (_) {
+        return null;                    /* 非法词直接跳过，不炸整轮 */
+    }
+    if (keepReCache.size >= KEEP_RE_MAX) keepReCache.clear();
+    keepReCache.set(k, re);
+    return re;
+}
+
+/* ---------------------------------------------------------------------------
  * 0. 基础工具
  * ------------------------------------------------------------------------ */
 
@@ -596,6 +621,29 @@ function rules() {
     ruleCacheKey = key;
     return ruleCache;
 }
+/* 合并正则缓存：按 ruleCache 数组的身份失效（rules() 自己已经做了 key 缓存） */
+let ruleMatcher = null;
+let ruleMatcherFor = null;
+
+function buildMatcher(list) {
+    if (!list || !list.length) return null;
+    /* flags 不能混：ci 规则单独一组，caseSensitive / 中文规则一组 */
+    const groups = [{ flags: 'g', rules: [] }, { flags: 'gi', rules: [] }];
+    for (const r of list) {
+        if (!r || !r.regex) continue;
+        groups[r.regex.flags.indexOf('i') >= 0 ? 1 : 0].rules.push(r);
+    }
+    const built = [];
+    for (const g of groups) {
+        if (!g.rules.length) continue;
+        const parts = g.rules.map((r, i) => '(?<r' + i + '>' + r.regex.source + ')');
+        let re = null;
+        try { re = new RegExp(parts.join('|'), g.flags); } catch (_) { re = null; }
+        if (!re) return null;                 /* 合并失败 → 整体退回逐条 */
+        built.push({ re: re, rules: g.rules });
+    }
+    return built.length ? built : null;
+}
 
 function pickAlt(rule, s) {
     const h = hash32(rule.src + '|' + (s.salt || ''));
@@ -634,7 +682,9 @@ function encodeText(text, s, map, detail) {
         }
         for (const k of s.keepList) {
             if (!k) continue;
-            work = stash(work, new RegExp(escapeRe(k), 'g'), vault);
+            const kre = keepRe(k);
+            if (!kre) continue;
+            work = stash(work, kre, vault);
         }
     } catch (_) { /* 保护失败就别保护了，继续筛 */ }
 
@@ -670,29 +720,71 @@ function encodeText(text, s, map, detail) {
     }
 
     /* 词表层：mode === 'off' 时整层跳过，一个字都不动 */
+    /* 词表层：mode === 'off' 时整层跳过，一个字都不动 */
     const wordRules = s.mode === 'off' ? [] : rules();
 
-    for (const rule of wordRules) {
-        try {
-            rule.regex.lastIndex = 0;
-            work = work.replace(rule.regex, (m, off, whole) => {
-                const rep = pickAlt(rule, s);
-                if (!rep) return m;
-                const out = sameCase(m, rep);
-                if (out === m) return m;
-                hits++;
-                if (map) map.set(out, m);
-                if (detail && detail.length < 40) {
-                    const w = String(whole || '');
-                    const a = Math.max(0, (off || 0) - 12);
-                    detail.push({
-                        from: m, to: out, rule: rule.id || rule.tag || '',
-                        ctx: w.slice(a, (off || 0) + m.length + 12).replace(/\s+/g, ' ').trim(),
-                    });
-                }
-                return out;
+    /* —— 单次扫描（patch2 合并优化）——
+       原来：N 条规则 × 全文各 replace 一次 = O(规则数 × 文本长度)。
+       现在：按 flags 把规则合成 1~2 条合并正则，全文只扫 1~2 遍；
+       同位置命中时靠命名组反查是哪条规则，长词优先（BANK 已按长度倒序）。
+       合并失败（极端正则/compat）自动退回逐条替换，行为不变。 */
+    const applyHit = (rule, m, off, whole) => {
+        const rep = pickAlt(rule, s);
+        if (!rep) return m;
+        const out = sameCase(m, rep);
+        if (out === m) return m;
+        hits++;
+        if (map) map.set(out, m);
+        if (detail && detail.length < 40) {
+            const w = String(whole || '');
+            const a = Math.max(0, (off || 0) - 12);
+            detail.push({
+                from: m, to: out, rule: rule.id || rule.tag || '',
+                ctx: w.slice(a, (off || 0) + m.length + 12).replace(/\s+/g, ' ').trim(),
             });
-        } catch (_) { /* 单条规则炸了不影响其他 */ }
+        }
+        return out;
+    };
+
+    if (wordRules.length) {
+        if (ruleMatcherFor !== wordRules) {
+            ruleMatcher = buildMatcher(wordRules);
+            ruleMatcherFor = wordRules;
+        }
+    } else {
+        ruleMatcher = null;
+        ruleMatcherFor = null;
+    }
+
+    if (ruleMatcher) {
+        for (const grp of ruleMatcher) {
+            try {
+                grp.re.lastIndex = 0;
+                work = work.replace(grp.re, (m, ...rest) => {
+                    /* 回调参数：p1..pn, offset, string, groups —— 必须从尾部取，
+                       否则 off/whole 会拿到捕获组内容，detail 上下文全错 */
+                    const named = rest.length ? rest[rest.length - 1] : null;
+                    const off = rest.length >= 3 ? rest[rest.length - 3] : 0;
+                    const whole = rest.length >= 3 ? rest[rest.length - 2] : '';
+                    let rule = null;
+                    if (named && typeof named === 'object') {
+                        for (let i = 0; i < grp.rules.length; i++) {
+                            if (named['r' + i] !== undefined) { rule = grp.rules[i]; break; }
+                        }
+                    }
+                    if (!rule) return m;
+                    return applyHit(rule, m, off, whole);
+                });
+            } catch (_) { /* 合并扫描炸了就只损失这一组，别把文本搞坏 */ }
+        }
+    } else {
+        /* 退路：合并正则建不出来时，走原来的逐条替换 */
+        for (const rule of wordRules) {
+            try {
+                rule.regex.lastIndex = 0;
+                work = work.replace(rule.regex, (m, off, whole) => applyHit(rule, m, off, whole));
+            } catch (_) { /* 单条规则炸了不影响其他 */ }
+        }
     }
 
     work = unstash(work, vault);
@@ -706,18 +798,34 @@ function encodeText(text, s, map, detail) {
 let activeMap = new Map();
 let decodeCache = null;
 let decodeLower = new Map();
+let decodeSig = '';                     /* patch3: 上次编译时的键集签名 */
 
-function rebuildDecodeCache() {
+function rebuildDecodeCache(force) {
     const keys = [...activeMap.keys()].filter(k => typeof k === 'string' && k.length >= 2);
-    if (!keys.length) { decodeCache = null; decodeLower = new Map(); return; }
-    keys.sort((a, b) => b.length - a.length);
+
+    if (!keys.length) {
+        decodeCache = null;
+        decodeLower = new Map();
+        decodeSig = '';
+        return false;
+    }
+
+    keys.sort((a, b) => b.length - a.length);   /* 长词优先，防止短词抢先吃掉 */
+
+    /* patch3: 签名 = 条数 + 排序后键集。字符串比较远比重编 600 路交替式便宜 */
+    const sig = keys.length + '\u0001' + keys.join('\u0000');
+    if (!force && decodeCache && sig === decodeSig) return false;
+
     decodeLower = new Map(keys.map(k => [k.toLowerCase(), k]));
     try {
         /* i 标志：模型把 ponder 写成 Ponder / PONDER 也能还原 */
         decodeCache = new RegExp(keys.map(escapeRe).join('|'), 'gi');
+        decodeSig = sig;
     } catch (_) {
         decodeCache = null;
+        decodeSig = '';
     }
+    return true;
 }
 
 function decodeText(text) {
@@ -746,6 +854,46 @@ function decodeText(text) {
 let lastRequestAt = 0;
 
 let lastRun = null;
+
+/* 输出侧还原表硬上限。原来是散落的字面量 600，这里收成常量 */
+const ACTIVE_MAP_CAP = 600;
+
+/* 只做淘汰，不改插入。keepKeys 为本轮键集合（第一段豁免），可为 null。
+   patch-evict: 单轮超过 cap 时，第一段全被 keepKeys 豁免，size 不会下降，
+   必须靠第二段硬压；这里把它改成「按 Map 迭代顺序边遍历边删」，删除必然生效。 */
+function evictActiveMap(activeMap, keepKeys, cap) {
+    cap = cap || ACTIVE_MAP_CAP;
+    if (!activeMap || activeMap.size <= cap) return 0;
+    let dropped = 0;
+    for (const k of [...activeMap.keys()]) {          /* 第一段：历史轮最旧先走 */
+        if (activeMap.size <= cap) break;
+        if (keepKeys && keepKeys.has(k)) continue;    /* 本轮键优先保留 */
+        activeMap.delete(k); dropped++;
+    }
+    if (activeMap.size > cap) {                       /* 第二段：单轮超限也硬压 */
+        let excess = activeMap.size - cap;
+        for (const k of activeMap.keys()) {           /* 边遍历边删，迭代器自动前进 */
+            if (excess <= 0) break;
+            if (activeMap.delete(k)) { dropped++; excess--; }
+        }
+    }
+    return dropped;
+}
+
+/* 合并本轮 map 进 activeMap，并保证 size <= cap。返回 {merged, dropped} */
+function mergeActiveMap(activeMap, map, cap) {
+    cap = cap || ACTIVE_MAP_CAP;
+    if (!map || !map.size) return { merged: 0, dropped: 0 };
+    /* patch-evict: 单轮自身就超限时先截断本轮，别把整轮灌进去再淘汰 */
+    let src = map, over = 0;
+    if (map.size > cap) {
+        src = new Map([...map.entries()].slice(-cap));  /* 保留本轮最后 cap 条 */
+        over = map.size - src.size;
+    }
+    for (const k of src.keys()) activeMap.delete(k);    /* 先删后插：本轮排到队尾 */
+    for (const [k, v] of src) activeMap.set(k, v);
+    return { merged: src.size, dropped: over + evictActiveMap(activeMap, src, cap) };
+}
 
 function onPromptReady(data) {
     const s = cfg();
@@ -806,15 +954,9 @@ function onPromptReady(data) {
 
     /* 输出侧还原表：合并而不是覆盖 —— 总结/quiet 这类旁路请求会重复触发这里，
        用覆盖法会把主生成的映射顶掉，还原就错位了 */
+    let evicted = 0;
     if (s.decodeOutput && map.size) {
-        for (const k of map.keys()) activeMap.delete(k);      /* 先删后插：当前轮排到队尾 */
-        for (const [k, v] of map) activeMap.set(k, v);
-        if (activeMap.size > 600) {
-            for (const k of [...activeMap.keys()]) {          /* 淘汰最旧，当前轮不淘汰 */
-                if (activeMap.size <= 600) break;
-                if (!map.has(k)) activeMap.delete(k);
-            }
-        }
+        evicted = mergeActiveMap(activeMap, map, ACTIVE_MAP_CAP).dropped;
         rebuildDecodeCache();
     }
 
@@ -823,6 +965,8 @@ function onPromptReady(data) {
         hits,
         touched: touchedMsgs,
         words: map.size,
+        active: activeMap.size,   /* 还原表现状 */
+        evicted,
         detail: detail.slice(0, 40),
     };
 
