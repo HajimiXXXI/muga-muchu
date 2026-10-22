@@ -6,6 +6,10 @@
 >
 > 作者：哈基米三十一世
 > 版本：2.0.0 ·「火の車」
+>
+> 御庭のまん中には唯、一輛の**火の車**が凄じい音を立てながら、燃え沸つてゐるばかりでございます。
+>
+> ——《地狱变》焚车之夜
 
 ---
 
@@ -176,6 +180,21 @@ SillyTavern/
 - **火**：深棕底 / 暖色文字 / 焰橙高亮
 
 配色全部走 CSS 变量：`--msv-bg`、`--msv-paper`、`--msv-vermil`、`--msv-ember`，挂在面板的 `data-msv-theme` 上。
+
+---
+
+## 🔧 2.0.0 修了 10 个 Bug
+
+1. **CSS 循环依赖** → 删掉 `--msv-ember: var(--msv-ember)` 等自引用，判卷灯能正常显示颜色了
+2. **bindUI 早退** → cfg() 为空时重试 5 次（每次 300ms），不再静默失效
+3. **抽屉溢出** → 补了 `flex:1; min-height:0`，长内容能滚到底
+4. **Esc 重复** → 加 `escBound` 标志，不再每次 buildUI 都叠一份监听
+5. **监听器重复** → bindUI 加统一 `bound` 标志，点印章不再一次翻两次
+6. **applyTheme 缺守卫** → 加 `typeof document` 判断，Node 测试不再炸
+7. **judgeText 判定不一致** → 统一用 `bodyLen`（不含 think 的正文长度）
+8. **面板太高** → 加 `max-height: 85vh` + `overflow-y: auto`，不再顶出屏幕
+9. **折叠点不动** → 折叠头加 `stopPropagation`，不再被外层 inline-drawer 抢走点击
+10. **面板太窄** → 删掉 `width: min(92vw, 420px)`，改为自适应容器宽度
 
 ---
 

@@ -1283,9 +1283,11 @@ function buildUI() {
 }
 
 function bindUI() {
+    if (bindUI.bound) return;
     const s = cfg();
     if (!s) {
         if (!bindUI.retries) bindUI.retries = 0;
+    bindUI.bound = true;
         if (bindUI.retries < 5) {
             bindUI.retries++;
             setTimeout(bindUI, 300);
@@ -1295,6 +1297,7 @@ function bindUI() {
         return;
     }
     bindUI.retries = 0;
+    bindUI.bound = true;
 
     const on = (id, ev, fn) => {
         const el = $el(id);

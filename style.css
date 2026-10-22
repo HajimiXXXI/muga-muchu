@@ -205,11 +205,9 @@
 
 .msv-panel {
     --msv-ink:        var(--msv-bg);
-    --msv-paper:      var(--msv-paper);
     --msv-paper-dim:  rgba(var(--msv-paper-rgb), .58);
     --msv-soot:       var(--msv-layer);
     --msv-vermil:     var(--msv-vermil-deep);
-    --msv-blood:      var(--msv-blood);
     --msv-ash:        rgba(190, 182, 165, .30);
     --msv-line:       rgba(var(--msv-paper-rgb), .14);
     --msv-line-soft:  rgba(var(--msv-paper-rgb), .075);
@@ -867,7 +865,7 @@
 }
 
 .msv-studio-body {
-    max-height: 44vh;
+    max-height: 85vh;
     overflow-y: auto;
     overscroll-behavior: contain;
     padding: 4px 6px 6px;
