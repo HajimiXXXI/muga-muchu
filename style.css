@@ -1,3 +1,16 @@
+:root {
+    --msv-paper-rgb: 237, 230, 214;
+    --msv-paper: #ede6d6;
+    --msv-bg: #f5f1e8;
+    --msv-layer: #1a1410;
+    --msv-layer-rgb: 26, 20, 16;
+    --msv-vermil-deep: #c15542;
+    --msv-vermil-rgb: 193, 85, 66;
+    --msv-ember: #e07844;
+    --msv-ember-rgb: 224, 120, 68;
+    --msv-blood: #8b2f2a;
+}
+
 /* 无我梦中 · Muga Muchū — author: 哈基米三十一世 */
 
 .msv-panel {
@@ -672,7 +685,7 @@
     --msv-bg:          #14100d;
     --msv-paper:       #d7c7a6;
     --msv-paper-hi:    #e8dcc4;
-    --msv-layer:       #2a211b;
+    --msv-layer: rgb(26, 20, 16);
     --msv-vermil:      #a8433c;
     --msv-vermil-deep: #8b302d;
     --msv-blood:       #a9443d;
@@ -744,7 +757,7 @@
  * 面板自己承担底色，主题才有落点
  * --------------------------------------------------------------- */
 .msv-panel[data-msv-theme] {
-    background: var(--msv-bg);
+    background-color: var(--msv-bg);
     border-radius: 2px;
     padding: 12px 12px 14px;
     color: var(--msv-paper);
