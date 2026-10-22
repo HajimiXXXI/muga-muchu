@@ -23,6 +23,7 @@
 }
 
 .msv-head {
+    flex-shrink: 0;
     border-left: 3px solid var(--SmartThemeQuoteColor, #c58b5a);
     padding-left: 8px;
     margin-bottom: 2px;
@@ -245,6 +246,7 @@
 
 /* ——— 匾额 ——— */
 .msv-head {
+    flex-shrink: 0;
     position: relative;
     padding: 12px 14px 11px 16px;
     margin: 0 0 3px;
@@ -513,6 +515,7 @@
     font-size: .95em;
 }
 .msv-head {
+    flex-shrink: 0;
     position: relative;
     overflow: hidden;
     padding: 12px 13px 11px 16px;
@@ -718,6 +721,7 @@
  * 2.0 主题印章（标题右上，点击夜/火切换）
  * --------------------------------------------------------------- */
 .msv-head {
+    flex-shrink: 0;
     position: relative;
     padding-right: 30px;
 }
@@ -778,6 +782,7 @@
  * 2.0 顶栏：标题 / 印章 / 状态灯 / 这轮结果
  * --------------------------------------------------------------- */
 .msv-head {
+    flex-shrink: 0;
     padding-right: 0;
 }
 
@@ -831,6 +836,7 @@
 .msv-lamp[data-state="empty"] { background: var(--msv-vermil); opacity: 1; }
 
 .msv-verdict {
+    flex-shrink: 0;
     margin-top: 3px;
     font-size: 12px;
     line-height: 1.5;
@@ -857,6 +863,7 @@
  * 2.0 正文区：这一轮改了什么
  * --------------------------------------------------------------- */
 .msv-studio {
+    flex-shrink: 0;
     margin: 8px 0 4px;
     border: 1px solid var(--msv-line);
     border-radius: 2px;
