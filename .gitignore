@@ -1,0 +1,6 @@
+*.bak*
+*.tmp
+*.zip
+.gh_token
+gh_token
+*.log
