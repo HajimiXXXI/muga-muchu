@@ -1328,3 +1328,16 @@
         max-width: 100%;
     }
 }
+
+/* ===== A11y 修复：触摸目标 ≥44×44px（追加覆盖，不改动上文规则） ===== */
+.msv-row select,
+.msv-row input[type="text"] { min-height: 44px; }
+.msv-check { min-height: 44px; padding: 4px 8px; }
+.msv-update .menu_button { min-height: 44px; padding-block: 6px; }
+.msv-hit { min-height: 44px; }
+.msv-drawer-x { width: 44px; height: 44px; }
+.msv-fold-head { min-height: 44px; }
+.msv-rule .msv-del {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-width: 44px; min-height: 44px; margin-left: auto; padding: 0 10px;
+}

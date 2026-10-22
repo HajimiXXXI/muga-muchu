@@ -896,6 +896,7 @@ function mergeActiveMap(activeMap, map, cap) {
 }
 
 function onPromptReady(data) {
+    try {
     const s = cfg();
     if (!s || !s.enabled) return;
     const chat = data && data.chat;
@@ -981,6 +982,9 @@ function onPromptReady(data) {
         lastRequestAt = Date.now();
         save();
         renderStats();
+    }
+    } catch (err) {
+        console.warn(LOG, 'onPromptReady 处理失败（已跳过本轮改造）', err);
     }
 }
 
@@ -1082,7 +1086,9 @@ function renderVerdict() {
     const lamp = $el('msv_lamp');
     const v = lastVerdict;
     if (box) {
-        box.textContent = v ? v.text : '还没生成过';
+        const txt = v ? v.text : '还没生成过';
+        box.textContent = txt;
+        box.title = txt;
         box.setAttribute('data-state', v ? v.state : 'idle');
     }
     if (lamp) lamp.setAttribute('data-state', v ? v.state : 'idle');
@@ -1091,15 +1097,20 @@ function renderVerdict() {
 function onGenerationEnded() {
     /* 流式时 MESSAGE_RECEIVED 不会触发，这里兜底；延后一点点让 saveReply 落定 */
     setTimeout(() => {
-        const c = getCtx();
-        const len = c?.chat?.length || 0;
-        let idx = -1;
-        if (pendingIndex >= 0 && pendingIndex < len) idx = pendingIndex;   /* 新消息 */
-        else if (len > 0) idx = len - 1;                                  /* regenerate */
-        pendingIndex = -1;
-        if (idx >= 0) decodeMessageAt(idx);
-        lastVerdict = judgeLastReply();
-        renderVerdict();
+        try {
+            const c = getCtx();
+            const len = c?.chat?.length || 0;
+            let idx = -1;
+            if (pendingIndex >= 0 && pendingIndex < len) idx = pendingIndex;   /* 新消息 */
+            else if (len > 0) idx = len - 1;                                  /* regenerate */
+            pendingIndex = -1;
+            if (idx >= 0) decodeMessageAt(idx);
+            lastVerdict = judgeLastReply();
+            renderVerdict();
+        } catch (err) {
+            pendingIndex = -1;
+            console.warn(LOG, 'onGenerationEnded 判卷失败（已跳过本轮判卷）', err);
+        }
     }, 160);
 }
 
@@ -1255,7 +1266,7 @@ function buildUI() {
             <span class="msv-title">无我梦中 <span class="msv-ver">v${VERSION}</span></span>
             <span class="msv-lamp" id="msv_lamp" data-state="idle" title="这轮结果"></span>
         </div>
-        <div class="msv-verdict" id="msv_verdict" data-state="idle">还没生成过</div>
+        <div class="msv-verdict" id="msv_verdict" data-state="idle" title="还没生成过">还没生成过</div>
         <div class="msv-sub"><span class="msv-sub-title">無我夢中 · 阿鼻叫喚</span><br><span class="msv-sub-line">让厚甲的 AI 在无我之梦里，周遭尽是阿鼻叫唤。</span><br><span class="msv-sub-sign">只改形，不改神 · by 哈基米三十一世</span></div>
     </div>
 
@@ -1435,7 +1446,6 @@ function bindUI() {
     const s = cfg();
     if (!s) {
         if (!bindUI.retries) bindUI.retries = 0;
-    bindUI.bound = true;
         if (bindUI.retries < 5) {
             bindUI.retries++;
             setTimeout(bindUI, 300);
