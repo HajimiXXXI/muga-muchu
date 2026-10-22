@@ -915,7 +915,7 @@ function judgeText(text) {
     if (/^(抱歉|对不起|很抱歉|我无法|我不能|I can'?t|I cannot|I'?m sorry)/i.test(t.slice(0, 24))) {
         return { state: 'refuse', text: '这轮被拒了' };
     }
-    if (t.length < 40) return { state: 'short', text: '只写了几个字' };
+    if (bodyLen < 40) return { state: 'short', text: '只写了几个字' };
     return { state: 'ok', text: '这轮正常 · ' + t.length + ' 字' };
 }
 
