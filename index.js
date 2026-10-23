@@ -481,6 +481,26 @@ const REFLOW_MARK = '\uE200';
  *     3000/540 字无害文本后 → 200。位置就是变量。
  * ------------------------------------------------------------------------ */
 
+/* --- EJS 安全拆分/还原：把 <% %> 整块换成私有区占位符，重排时不被拆散 --- */
+function splitEjsSafe(text) {
+    const blocks = [];
+    if (!text || typeof text !== 'string') return { masked: text, blocks };
+    const masked = text.replace(/<%[\s\S]*?%>/g, (m) => {
+        blocks.push(m);
+        return '\uE102' + (blocks.length - 1) + '\uE103';
+    });
+    return { masked, blocks };
+}
+
+function restoreEjs(text, blocks) {
+    if (!text || typeof text !== 'string') return text;
+    if (!Array.isArray(blocks) || !blocks.length) return text;
+    return text.replace(/\uE102(\d+)\uE103/g, (m, i) => {
+        const b = blocks[Number(i)];
+        return (typeof b === 'string') ? b : m;
+    });
+}
+
 function reflow(text, s) {
     if (!text || typeof text !== 'string') return text;
     /* 已有别家插件的 PUA 占位符：一律不动 */
@@ -493,19 +513,64 @@ function reflow(text, s) {
     /* 幂等：重排过的文本带 U+E200 前缀，直接放行，别叠第二层 */
     if (text.startsWith(REFLOW_MARK)) return text;
 
-    /* 含 EJS：padding-only——不拆段、不改顺序，原文一字不动，只在头尾各垫一段 */
+    /* 含 EJS：先掩码再重排敏感段；任何校验不过，回退到 padding-only */
     if (hasEjs) {
         const padHeadLen = s.reflowHead || 3000;
         const padTailLen = s.reflowTail || 540;
         const tagCount = (t) => (t.match(/<%|%>/g) || []).length;
         const tagsBefore = tagCount(text);
+
+        /* 原 padding-only：不拆段、不改顺序，只在头尾各垫一段 */
+        const padOnly = () => {
+            const padded = REFLOW_MARK
+                + PAD_TEXT.slice(0, padHeadLen) + '\n\n'
+                + text + '\n\n'
+                + PAD_TEXT.slice(padHeadLen, padHeadLen + padTailLen);
+            if (tagCount(padded) !== tagsBefore) return text;
+            return reflowDiluteText(padded, s);
+        };
+
+        const split = splitEjsSafe(text);
+        const masked = split.masked;
+        const blocks = split.blocks;
+        if (!masked || !blocks.length) return padOnly();
+        /* 校验一：占位符数量必须与掩码块数一致 */
+        if ((masked.match(/\uE102\d+\uE103/g) || []).length !== blocks.length) return padOnly();
+
+        const paras = masked.split(/\r?\n\s*\r?\n/);
+        const hot = [];
+        const cold = [];
+        for (const p of paras) {
+            if (!p.trim()) continue;
+            (HOT_RE.test(p) ? hot : cold).push(p);
+        }
+        /* 敏感段太少或太多：重排没有意义，回退 padding-only */
+        if (hot.length < 1 || hot.length > paras.length * 0.5) return padOnly();
+
+        /* 与常规分支同一套逻辑：cold 按字数分两半，hot 放正中 */
+        const totalChars = cold.reduce((a, p) => a + p.length, 0);
+        let acc = 0;
+        let cut = 0;
+        while (cut < cold.length && acc + cold[cut].length < totalChars / 2) {
+            acc += cold[cut].length;
+            cut++;
+        }
+        if (cut === 0) cut = Math.max(1, Math.floor(cold.length / 2));
+        if (cut >= cold.length) cut = cold.length - 1;
+        if (cut < 0) cut = 0;
+        const mid = cold.slice(0, cut).join('\n\n');
+        const mid2 = cold.slice(cut).join('\n\n');
+
+        const restored = restoreEjs([mid, hot.join('\n\n'), mid2].filter(Boolean).join('\n\n'), blocks);
+        /* 校验二：占位符必须还干净；校验三：<%|%> 计数与原文一致 */
+        if (/\uE102\d+\uE103/.test(restored)) return padOnly();
+        if (tagCount(restored) !== tagsBefore) return padOnly();
+
         const padded = REFLOW_MARK
             + PAD_TEXT.slice(0, padHeadLen) + '\n\n'
-            + text + '\n\n'
+            + restored + '\n\n'
             + PAD_TEXT.slice(padHeadLen, padHeadLen + padTailLen);
-        /* 防御校验：拼接后标签数必须一致，否则原样返回 */
-        if (tagCount(padded) !== tagsBefore) return text;
-        /* 分段稀释：头尾垫料之后再按段落稀释一遍 */
+        if (tagCount(padded) !== tagsBefore) return padOnly();
         return reflowDiluteText(padded, s);
     }
 
