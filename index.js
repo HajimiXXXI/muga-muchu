@@ -23,7 +23,7 @@
  * ==========================================================================*/
 
 const MODULE_NAME = 'muga_muchu';
-const VERSION = '2.0.0';
+const VERSION = '2.1.0';
 const LOG = '[无我梦中]';
 
 /* 本扩展的 GitHub 仓库：插件内“检查更新”只读它 */
@@ -1673,6 +1673,18 @@ function onPromptReady(data) {
     const chat = data && data.chat;
     if (!Array.isArray(chat) || !chat.length) return;
 
+    /* 上下文裁剪层：这里先裁一次，保证不管哪条传输通道都裁到。
+     * data.chat 是 ST 拼好的请求数组副本，就地 splice 安全；
+     * 若后面还走 fetch 钩子，那边再裁时已低于阈值，自动空转。 */
+    if (s.ctxTrim) {
+        try {
+            const trimmed = trimContext(chat, s);
+            if (Array.isArray(trimmed) && trimmed !== chat && trimmed.length < chat.length) {
+                chat.splice(0, chat.length, ...trimmed);
+            }
+        } catch (_) { /* ignore */ }
+    }
+
     /* 找最后一条 user 消息，用于区分「当前输入」和「历史」 */
     let lastUser = -1;
     for (let i = chat.length - 1; i >= 0; i--) {
@@ -2090,6 +2102,29 @@ function buildUI() {
                 </select>
             </div>
 
+            <div class="msv-row">
+                <span class="msv-label">旧历史</span>
+                <select id="msv_ctx_keep">
+                    <option value="0">全部发送（不裁剪）</option>
+                    <option value="2">只留最近 2 条</option>
+                    <option value="4">只留最近 4 条（推荐）</option>
+                    <option value="6">只留最近 6 条</option>
+                    <option value="8">只留最近 8 条</option>
+                    <option value="12">只留最近 12 条</option>
+                </select>
+            </div>
+
+            <div class="msv-row">
+                <span class="msv-label">裁剪阈值</span>
+                <select id="msv_ctx_max">
+                    <option value="30000">3 万字</option>
+                    <option value="60000">6 万字（推荐）</option>
+                    <option value="120000">12 万字</option>
+                    <option value="200000">20 万字</option>
+                </select>
+            </div>
+            <div class="msv-wline" style="opacity:.65;cursor:default">旧历史超过阈值才裁，裁就裁到只剩这些条；预设与最后两条永远保留。</div>
+
             <div class="msv-grid">
                 <label class="msv-check"><input type="checkbox" id="msv_marker"> 标记替换</label>
                 <label class="msv-check"><input type="checkbox" id="msv_reflow"> 阅卷层</label>
@@ -2323,6 +2358,20 @@ function bindUI() {
     on('msv_mode', 'change', (e) => { s.mode = e.target.value; save(); ruleCache = null; renderStats(); });
     on('msv_intensity', 'change', (e) => { s.intensity = Number(e.target.value) || 2; save(); ruleCache = null; renderStats(); });
     on('msv_dilute', 'change', (e) => { const v = Number(e.target.value); s.reflowDilute = v > 0; s.reflowRatio = v > 0 ? v : 0.35; save(); ruleCache = null; renderStats(); });
+    on('msv_ctx_keep', 'change', (e) => {
+        const v = Number(e.target.value);
+        s.ctxTrim = v > 0;
+        if (v > 0) s.ctxTrimKeep = v;
+        save();
+        renderStats();
+    });
+    on('msv_ctx_max', 'change', (e) => {
+        const v = Number(e.target.value);
+        s.ctxTrimMax = v > 0 ? v : 60000;
+        save();
+        updateCtxSizeLine(undefined, s.ctxTrimMax);
+        renderStats();
+    });
     on('msv_tagmode', 'change', (e) => { s.tagMode = e.target.value; save(); renderStats(); });
     on('msv_s2t', 'change', (e) => { s.s2tMode = e.target.value; save(); ruleCache = null; renderStats(); });
     on('msv_scope_system', 'change', (e) => { s.scope.system = !!e.target.checked; save(); });
@@ -2674,6 +2723,8 @@ function syncUI() {
     set('msv_mode', s.mode);
     set('msv_intensity', String(s.intensity));
     set('msv_dilute', s.reflowDilute === false ? '0' : String(s.reflowRatio || 0.35));
+    set('msv_ctx_keep', s.ctxTrim === false ? '0' : String(Number(s.ctxTrimKeep) >= 0 ? Number(s.ctxTrimKeep) : 4));
+    set('msv_ctx_max', String(Number(s.ctxTrimMax) > 0 ? Number(s.ctxTrimMax) : 60000));
     set('msv_tagmode', s.tagMode);
     set('msv_s2t', s.s2tMode || 'off');
     chk('msv_scope_system', s.scope.system);
@@ -2945,7 +2996,7 @@ function applyCtxTags(messages) {
  * 7.4b 上下文裁剪层（ctxTrim）
  *
  * 目的：上下文越攒越长，渠道那头先炸。总字数超 ctxTrimMax 时，从数组最前面
- * 开始丢非 system 消息，直到降到阈值下或剩余条数等于 ctxTrimKeep。
+ * 开始丢非 system 消息，先裁到只剩 ctxTrimKeep 条；若仍超阈值就继续丢到阈值下。
  * 硬底线：最后一条 user 消息、最后两条消息、全部 system 一律不丢。
  * 返回新数组（没裁就原样返回），裁剪账记在 lastCtxTrim。
  * ------------------------------------------------------------------------ */
@@ -2996,14 +3047,27 @@ function trimContext(messages, s) {
 
         const drop = new Set();
         let total = before;
-        for (let i = 0; i < n; i++) {
-            if (total <= limit) break;
-            if (n - drop.size <= keep) break;
-            if (locked.has(i)) continue;
+        const canDrop = (i) => {
+            if (locked.has(i)) return false;
             const m = messages[i];
-            if (m && typeof m === 'object' && m.role === 'system') continue;
+            return !(m && typeof m === 'object' && m.role === 'system');
+        };
+
+        /* 第一段：条数裁到 keep（这是解药，旧剧情必须真的被丢掉） */
+        for (let i = 0; i < n; i++) {
+            if (n - drop.size <= keep) break;
+            if (!canDrop(i)) continue;
             drop.add(i);
-            total -= ctxMsgChars(m);
+            total -= ctxMsgChars(messages[i]);
+        }
+        /* 第二段：条数已到 keep 但仍超字数，继续从最前面丢（硬底线不动） */
+        if (total > limit) {
+            for (let i = 0; i < n; i++) {
+                if (total <= limit) break;
+                if (drop.has(i) || !canDrop(i)) continue;
+                drop.add(i);
+                total -= ctxMsgChars(messages[i]);
+            }
         }
         if (!drop.size) {
             lastCtxTrim = { dropped: 0, chars: 0, before, after: before };
