@@ -469,6 +469,8 @@ const DEFAULTS = {
     protectCode: true,
     /** 输出侧把替换词还原回原文 */
     decodeOutput: true,
+    /** 请求侧 fetch 拦截：柏宝库 save-generate / backends generate 通道 */
+    fetchHook: true,
     /** NSFW 词包 */
     nsfwPack: false,
     /** 永不替换的词 */
@@ -1842,6 +1844,138 @@ function renderStats() {
 }
 
 /* ---------------------------------------------------------------------------
+ * 7.5 请求侧 fetch 拦截：柏宝库 save-generate 通道也走 encodeText
+ *
+ * 起因：save-generate 与 /api/backends/chat-completions/generate 这两条链路的
+ * 请求体是前端自己拼的 fetch，不经过 CHAT_COMPLETION_PROMPT_READY 事件，
+ * 所以 onPromptReady 完全看不到它们，正文一个词都没换。这里在 fetch 层补一刀：
+ * 只改请求体里的 messages / system_prompt / prompt，输出侧原样不动。
+ * ------------------------------------------------------------------------ */
+
+const FETCH_HOOK_PATHS = ['/v1/chats/save-generate', '/api/backends/chat-completions/generate'];
+
+function hookUrlMatch(url) {
+    try {
+        if (typeof url !== 'string' || !url) return false;
+        for (const p of FETCH_HOOK_PATHS) if (url.indexOf(p) !== -1) return true;
+        return false;
+    } catch (_) { return false; }
+}
+
+/* 单条 content（string）编码，命中就写回并记账 */
+function encodeFetchContent(holder, key, s, map, detail, acc) {
+    try {
+        const v = holder[key];
+        if (typeof v !== 'string' || !v) return;
+        const r = encodeText(v, s, map, detail);
+        if (!r || typeof r.text !== 'string' || r.text === v) return;
+        holder[key] = r.text;
+        acc.hits += r.hits || 0;
+        acc.changed = true;
+        acc.touched++;
+    } catch (_) { /* 单条失败不影响其他 */ }
+}
+
+/* body.messages / body.generate.messages：content 为 string 时直接编码，
+   content 为 part 数组时按 part.text 编码（多模态渠道常见） */
+function encodeFetchMessages(list, s, map, detail, acc) {
+    if (!Array.isArray(list)) return;
+    for (const m of list) {
+        if (!m || typeof m !== 'object') continue;
+        if (typeof m.content === 'string') {
+            encodeFetchContent(m, 'content', s, map, detail, acc);
+        } else if (Array.isArray(m.content)) {
+            for (const part of m.content) {
+                if (part && typeof part === 'object' && typeof part.text === 'string') {
+                    encodeFetchContent(part, 'text', s, map, detail, acc);
+                }
+            }
+        }
+    }
+}
+
+function encodeFetchBody(body, s, map, detail) {
+    const acc = { hits: 0, changed: false, touched: 0 };
+    encodeFetchMessages(body.messages, s, map, detail, acc);
+    if (body.generate && typeof body.generate === 'object') {
+        encodeFetchMessages(body.generate.messages, s, map, detail, acc);
+    }
+    encodeFetchContent(body, 'system_prompt', s, map, detail, acc);
+    encodeFetchContent(body, 'prompt', s, map, detail, acc);
+    return acc;
+}
+
+function initFetchInterceptor() {
+    try {
+        if (globalThis.__mugaFetchHooked) return;
+        const origFetch = globalThis.fetch;              /* (2) 保存原始 fetch */
+        if (typeof origFetch !== 'function') return;
+        globalThis.__mugaOrigFetch = origFetch;
+
+        globalThis.fetch = async function mugaFetchHook(input, init) {  /* (2) 替换全局 fetch */
+            try {
+                const s = cfg();
+                if (!s || !s.enabled || !s.fetchHook) return origFetch(input, init);   /* (6) 开关 */
+
+                const url = typeof input === 'string' ? input : ((input && input.url) || '');
+                if (!hookUrlMatch(url)) return origFetch(input, init);                 /* (3) 只认两条通道 */
+                const method = String((init && init.method) || (input && input.method) || 'GET').toUpperCase();
+                if (method !== 'POST') return origFetch(input, init);
+                if (!init || typeof init.body !== 'string') return origFetch(input, init);
+
+                const contentType = '';   /* 不信任 header，直接试 JSON.parse */
+                let body = null;
+                try { body = JSON.parse(init.body); } catch (_) { return origFetch(input, init); }
+                if (!body || typeof body !== 'object') return origFetch(input, init);
+
+                const map = new Map();
+                const detail = [];
+                const acc = encodeFetchBody(body, s, map, detail);                     /* (4) */
+                if (!acc.changed) return origFetch(input, init);
+
+                /* 输出侧还原表：和 onPromptReady 一样用 merge，别覆盖主生成那份 */
+                let evicted = 0;
+                if (s.decodeOutput && map.size) {
+                    evicted = mergeActiveMap(activeMap, map, ACTIVE_MAP_CAP).dropped;
+                    rebuildDecodeCache();
+                }
+
+                lastRun = {
+                    at: Date.now(),
+                    hits: acc.hits,
+                    touched: acc.touched,
+                    words: map.size,
+                    active: activeMap.size,
+                    evicted,
+                    detail: detail.slice(0, 40),
+                };
+                renderStudio();
+
+                if (acc.hits > 0) {
+                    s.stats.lastHits = acc.hits;
+                    s.stats.totalHits = (s.stats.totalHits || 0) + acc.hits;
+                    s.stats.lastAt = Date.now();
+                    s.stats.lastDetail = detail.slice(0, 10);
+                    s.stats.lastRequestWords = acc.touched;
+                    lastRequestAt = Date.now();
+                    save();
+                    renderStats();
+                }
+
+                const nextInit = Object.assign({}, init, { body: JSON.stringify(body) });
+                return origFetch(input, nextInit);
+            } catch (err) {
+                console.warn(LOG, 'fetch 拦截失败，回落原始请求', err);              /* (5) */
+                return origFetch(input, init);
+            }
+        };
+        globalThis.__mugaFetchHooked = true;
+    } catch (e) {
+        console.warn(LOG, 'initFetchInterceptor 安装失败', e);                       /* (5) */
+    }
+}
+
+/* ---------------------------------------------------------------------------
  * 8. 启动
  * ------------------------------------------------------------------------ */
 
@@ -1859,6 +1993,7 @@ jQuery(async () => {
     }
 
     cfg();
+    initFetchInterceptor();   /* 请求侧 fetch 拦截，只装一次 */
 
     const et = c.eventTypes || {};
     const ev = (k, fallback) => et[k] || fallback;
