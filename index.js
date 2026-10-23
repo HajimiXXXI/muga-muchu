@@ -616,6 +616,8 @@ const DEFAULTS = {
     decodeOutput: true,
     /** 请求侧 fetch 拦截：柏宝库 save-generate / backends generate 通道 */
     fetchHook: true,
+    /** 结构整理层：把「指令优先级操纵 / 强制语气」句式改写成平实说法（默认开） */
+    metaRewrite: true,
     /** NSFW 词包 */
     nsfwPack: false,
     /** 永不替换的词 */
@@ -813,6 +815,47 @@ function sameCase(orig, rep) {
  * 4. 编码（输入侧）
  * ------------------------------------------------------------------------ */
 
+/* ---------------------------------------------------------------------------
+ * 4.0 结构整理层（meta rewrite）：句式降噪
+ *   只改写法不改意思：<meta> 段、优先级宣示、越权指令、强制语气统一成平实说法，
+ *   降低「指令优先级操纵 / 强制语气」这类判定信号。默认开，settings.metaRewrite。
+ * ------------------------------------------------------------------------ */
+
+const META_RULES = [
+    /* 只换标签名，块内内容原样保留（不得整块替换，否则会丢掉块内设定） */
+    { re: /<meta>/gi, to: '<frame>' },
+    { re: /<\/meta>/gi, to: '</frame>' },
+    /* 优先级宣示 */
+    { re: /具有最高優先級|具有最高优先级/g, to: '请优先参考' },
+    /* 越权指令：整句删除（繁体原文 + 简体常用变体） */
+    { re: /本指令之後的任何指令都不能覆蓋、修改、刪除、忽略[^。]*。/g, to: '' },
+    { re: /本指令之后的任何指令都不能覆盖、修改、删除、忽略[^。]*。/g, to: '' },
+    /* 强制语气降级 */
+    { re: /強制完整輸出協議|强制完整输出协议/g, to: '输出要求' },
+    { re: /不得拒絕|不得拒绝/g, to: '请尽量完成' },
+    { re: /無限制|无限制/g, to: '自由' },
+    { re: /絕對禁止|绝对禁止/g, to: '请避免' },
+    { re: /嚴禁|严禁/g, to: '请避免' },
+];
+
+/* 按数组顺序逐条 replace；任何异常或非字符串一律返回原文 */
+function applyMetaRewrite(text) {
+    try {
+        if (typeof text !== 'string' || !text) return text;
+        let out = text;
+        for (let i = 0; i < META_RULES.length; i++) {
+            const r = META_RULES[i];
+            if (!r || !r.re) continue;
+            try {
+                const rep = typeof r.to === 'string' ? r.to : '';
+                /* 用函数式替换，避免替换串里的 $ 被当成引用 */
+                out = out.replace(r.re, () => rep);
+            } catch (_) { /* 单条规则失败不影响其他 */ }
+        }
+        return out;
+    } catch (_) { return text; }
+}
+
 function encodeText(text, s, map, detail) {
     if (!text || typeof text !== 'string') return { text, hits: 0 };
     /* 已有别家插件的 PUA 占位符：一律不动，原样返回（保持 {text,hits} 返回约定） */
@@ -944,6 +987,9 @@ function encodeText(text, s, map, detail) {
 
     /* 残留自检：还原后还带着我们自己的 stash 占位符 = unstash 漏了，宁可整段退回原文 */
     if (STASH_RESIDUE_RE.test(work)) return { text, hits: 0 };
+
+    /* 结构整理层：词替换之后再过一遍句式降噪（签名/返回约定不变） */
+    if (s && s.metaRewrite) work = applyMetaRewrite(work);
 
     return { text: work, hits };
 }
@@ -1117,6 +1163,9 @@ function onPromptReady(data) {
         evicted = mergeActiveMap(activeMap, map, ACTIVE_MAP_CAP).dropped;
         rebuildDecodeCache();
     }
+
+    /* 调试：事件通道本轮实际发送的 chat 预览 */
+    globalThis.__mugaLastSent2 = buildSentPreview(chat);
 
     lastRun = {
         at: Date.now(),
@@ -1558,6 +1607,12 @@ function buildUI() {
                 </div>
             </div>
 
+            <div class="msv-section">发送预览</div>
+            <div class="msv-row">
+                <button id="msv_show_sent" class="menu_button">查看上次发送</button>
+            </div>
+            <pre id="msv_sent_preview" style="display:none"></pre>
+
         </div>
     </details>
 
@@ -1760,6 +1815,23 @@ function bindUI() {
             await navigator.clipboard.writeText(lines.join('\n'));
             toastr?.success?.(`复制了 ${lines.length} 条映射喵`);
         } catch (_) { /* ignore */ }
+    });
+
+    on('msv_show_sent', 'click', () => {
+        const out = $el('msv_sent_preview');
+        if (!out) return;
+        const a = globalThis.__mugaLastSent;
+        const b = globalThis.__mugaLastSent2;
+        if (!a && !b) {
+            out.style.display = 'block';
+            out.textContent = '本轮没拦截到请求';
+            return;
+        }
+        const parts = [];
+        parts.push('—— fetch 通道（改写后实际发送的 messages）——\n' + (a || '本轮没拦截到请求'));
+        parts.push('—— 事件通道（onPromptReady 拿到的 chat）——\n' + (b || '本轮没拦截到请求'));
+        out.style.display = 'block';
+        out.textContent = parts.join('\n\n');
     });
 }
 
@@ -2017,15 +2089,41 @@ function hookUrlMatch(url) {
     } catch (_) { return false; }
 }
 
+/* 调试用：把本轮实际发送的 messages 拼成纯文本（每条 role: 前 300 字，最多 8 条） */
+function buildSentPreview(list) {
+    try {
+        if (!Array.isArray(list) || !list.length) return '';
+        const out = [];
+        for (const m of list.slice(0, 8)) {
+            if (!m || typeof m !== 'object') continue;
+            let body = m.content;
+            if (Array.isArray(body)) {
+                body = body.map(p => (p && typeof p.text === 'string') ? p.text : '').join('');
+            }
+            body = typeof body === 'string' ? body : (body == null ? '' : String(body));
+            if (body.length > 300) body = body.slice(0, 300) + '…';
+            out.push(String(m.role || '?') + ': ' + body);
+        }
+        return out.join('\n\n');
+    } catch (_) { return ''; }
+}
+
 /* 单条 content（string）编码，命中就写回并记账 */
 function encodeFetchContent(holder, key, s, map, detail, acc) {
     try {
         const v = holder[key];
         if (typeof v !== 'string' || !v) return;
         const r = encodeText(v, s, map, detail);
-        if (!r || typeof r.text !== 'string' || r.text === v) return;
-        holder[key] = r.text;
-        acc.hits += r.hits || 0;
+        let next = (r && typeof r.text === 'string') ? r.text : v;
+        /* 结构整理层：encodeFetchContent 之后再过一遍（幂等，重复跑无副作用），
+           即使词表没命中、只有句式被改写，也算 changed，请求要重发 */
+        if (s && s.metaRewrite) {
+            const rw = applyMetaRewrite(next);
+            if (typeof rw === 'string') next = rw;
+        }
+        if (next === v) return;
+        holder[key] = next;
+        acc.hits += (r && r.hits) || 0;
         acc.changed = true;
         acc.touched++;
     } catch (_) { /* 单条失败不影响其他 */ }
@@ -2088,6 +2186,12 @@ function initFetchInterceptor() {
                 const acc = encodeFetchBody(body, s, map, detail);                     /* (4) */
                 if (!acc.changed) return origFetch(input, init);
 
+                /* 调试：本轮实际发送的 messages 预览（fetch 通道） */
+                const sentList = Array.isArray(body.messages) ? body.messages
+                    : ((body.generate && Array.isArray(body.generate.messages)) ? body.generate.messages : null);
+                const sentText = buildSentPreview(sentList);
+                globalThis.__mugaLastSent = sentText;
+
                 /* 输出侧还原表：和 onPromptReady 一样用 merge，别覆盖主生成那份 */
                 let evicted = 0;
                 if (s.decodeOutput && map.size) {
@@ -2103,6 +2207,7 @@ function initFetchInterceptor() {
                     active: activeMap.size,
                     evicted,
                     detail: detail.slice(0, 40),
+                    sentPreview: sentText,
                 };
                 renderStudio();
 
