@@ -7,8 +7,8 @@
   "js": "index.js",
   "css": "style.css",
   "author": "哈基米三十一世",
-  "version": "1.9.1",
-  "homePage": "https://github.com/HajimiXXXI/muga-muchu",
+  "version": "2.1.0",
+  "homePage": "",
   "auto_update": false,
   "minimum_client_version": "1.12.0"
 }
