@@ -416,6 +416,7 @@ function pickPadSlice(n) {
  *  EJS 模板安全：先 splitEjsSafe() 掩码，切段/插垫料/算长度全程只对 masked 做，
  *  还原后校验 <% %> 计数与原输入一致、且无残留占位符，任一不过即返回原输入。 */
 function reflowDiluteText(text, s) {
+    const ss = cfg(); if (ss && ss.safeMode) return text;   /* 安全模式：原样返回 */
     if (!text || typeof text !== 'string') return text;
     if (s && s.reflowDilute === false) return text;
     const rawRatio = (s && s.reflowRatio != null) ? Number(s.reflowRatio) : 0.35;
@@ -523,6 +524,7 @@ function restoreEjs(text, blocks) {
 }
 
 function reflow(text, s) {
+    const ss = cfg(); if (ss && ss.safeMode) return text;   /* 安全模式：原样返回 */
     if (!text || typeof text !== 'string') return text;
     /* 已有别家插件的 PUA 占位符：一律不动 */
     if (text && hasForeignPua(text)) return text;
@@ -829,6 +831,8 @@ const BANK = [
 const DEFAULTS = {
     /** 总开关 */
     enabled: true,
+    /** 安全模式：停用全部文本处理 */
+    safeMode: false,
     /** homophone | pinyin | mix */
     mode: 'off',
     /** 1 | 2 | 3 */
@@ -1086,6 +1090,7 @@ const META_RULES = [
  * EJS 防护：<% %> 整块先换成占位符再替换，替完还原；计数不一致或无残留校验
  * 不过一律返回原文——宁可漏改，不能改坏模板。 */
 function applyMetaRewrite(text) {
+    const ss = cfg(); if (ss && ss.safeMode) return text;   /* 安全模式：原样返回 */
     try {
         if (typeof text !== 'string' || !text) return text;
         const tagCount = (t) => (t.match(/<%|%>/g) || []).length;
@@ -1246,6 +1251,7 @@ function s2tSets() {
 
 /* 逐字替换：for...of 按码点走，代理对（emoji/生僻字）不会被切坏 */
 function toTraditional(text) {
+    const ss = cfg(); if (ss && ss.safeMode) return text;   /* 安全模式：原样返回 */
     try {
         if (!text || typeof text !== 'string') return text;
         let out = '';
@@ -1277,6 +1283,7 @@ function looksTraditional(text) {
 }
 
 function encodeText(text, s, map, detail) {
+    const ss = cfg(); if (ss && ss.safeMode) return { text, hits: 0 };   /* 安全模式：原样返回 */
     if (!text || typeof text !== 'string') return { text, hits: 0 };
     /* 已有别家插件的 PUA 占位符：一律不动，原样返回（保持 {text,hits} 返回约定） */
     if (text && hasForeignPua(text)) return { text, hits: 0 };
@@ -1746,6 +1753,13 @@ let lastVerdict = null;
 function renderVerdict() {
     const box = $el('msv_verdict');
     const lamp = $el('msv_lamp');
+    const ss = cfg();
+    if (ss && ss.safeMode) {
+        const tip = '⚠ 安全模式：文本处理已停用';
+        if (box) { box.textContent = tip; box.title = tip; box.setAttribute('data-state', 'safe'); }
+        if (lamp) lamp.setAttribute('data-state', 'safe');
+        return;
+    }
     const v = lastVerdict;
     if (box) {
         const txt = v ? v.text : '还没生成过';
@@ -1927,6 +1941,7 @@ function buildUI() {
             <div class="msv-seal" id="msv_theme" role="button" tabindex="0" title="夜 / 火">夜</div>
             <span class="msv-title">无我梦中 <span class="msv-ver">v${VERSION}</span></span>
             <span class="msv-lamp" id="msv_lamp" data-state="idle" title="这轮结果"></span>
+            <button type="button" class="msv-safemode" id="msv_safemode" style="border:2px solid #d33;border-radius:6px;background:transparent;color:#d33;font-weight:700;padding:1px 8px;margin-left:6px;cursor:pointer;" title="安全模式：停用全部文本处理">安全</button>
         </div>
         <div class="msv-verdict" id="msv_verdict" data-state="idle" title="还没生成过">还没生成过</div>
         <div class="msv-sub"><span class="msv-sub-title">無我夢中 · 阿鼻叫喚</span><br><span class="msv-sub-line">让厚甲的 AI 在无我之梦里，周遭尽是阿鼻叫唤。</span><br><span class="msv-sub-sign">只改形，不改神 · by 哈基米三十一世</span></div>
@@ -2204,6 +2219,24 @@ function bindUI() {
     on('msv_nsfw', 'change', (e) => { s.nsfwPack = !!e.target.checked; save(); ruleCache = null; renderStats(); });
     on('msv_marker', 'change', (e) => { s.markerMode = !!e.target.checked; save(); renderStats(); });
     on('msv_reflow', 'change', (e) => { s.reflow = !!e.target.checked; save(); renderStats(); });
+
+    /* 安全模式：一键停用全部文本处理 */
+    const safeBtn = $el('msv_safemode');
+    if (safeBtn) {
+        const paintSafe = () => {
+            safeBtn.classList.toggle('is-on', !!s.safeMode);
+            safeBtn.style.background = s.safeMode ? '#d33' : 'transparent';
+            safeBtn.style.color = s.safeMode ? '#fff' : '#d33';
+        };
+        paintSafe();
+        safeBtn.addEventListener('click', () => {
+            s.safeMode = !s.safeMode;
+            save();
+            paintSafe();
+            renderVerdict();
+            renderStats();
+        });
+    }
 
     on('msv_keep', 'input', (e) => {
         /* 只按逗号拆：空格留给 chain of thought 这类多词短语 */
@@ -2538,6 +2571,13 @@ function syncUI() {
     chk('msv_reflow', s.reflow);
     set('msv_keep', s.keepList.join(','));
     set('msv_salt', s.salt);
+
+    const safeBtn2 = $el('msv_safemode');
+    if (safeBtn2) {
+        safeBtn2.classList.toggle('is-on', !!s.safeMode);
+        safeBtn2.style.background = s.safeMode ? '#d33' : 'transparent';
+        safeBtn2.style.color = s.safeMode ? '#fff' : '#d33';
+    }
 }
 
 function renderRules() {
@@ -2741,6 +2781,7 @@ function countMsgMarks(messages) {
 
 /* 给 messages 套段标；返回实际被改动的消息条数（0 = 没动 / 已回退） */
 function applyCtxTags(messages) {
+    const ss = cfg(); if (ss && ss.safeMode) return 0;   /* 安全模式：原样返回 */
     try {
         if (!Array.isArray(messages) || !messages.length) return 0;
         const before = countMsgMarks(messages);
