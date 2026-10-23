@@ -333,6 +333,139 @@ const PAD_TEXT = `　　像堀川大殿这样的人物，前不必说，后世�
 
 　　因此良秀在画道上有多高的造诣，也不必细说了。不过就连他的画，用笔和设色也全然不同于别的画师，所以与他交恶的同行里，颇有说他是江湖骗子的。据那伙人说，川成也好金冈也好，其他古代名匠的笔墨，都有风雅的传闻，什么板门上的梅花每逢月夜散发香气啦，什么屏风上的大宫人连吹笛的声音都听得见啦；可一到良秀的画，传出来的总是阴森古怪的怪谈。比如他在龙盖寺门上画的《五趣生死》图，据说夜深时`;
 
+/* ---------------------------------------------------------------------------
+ * 1d-2. 长文本分段稀释（dilute2）
+ *   同一段 PAD_TEXT 反复用，等于没稀释；pad-pool.txt 里放多段公版译文，
+ *   按空行切成段落池，插入时循环取用、相邻段落不重复。
+ *   没加载到就退回 PAD_TEXT 重复拼接——宁可用旧的，也别让 reflow 挂掉。
+ * ------------------------------------------------------------------------ */
+
+/** 段落池；null = 还没加载成功，pickPadSlice 会走 PAD_TEXT 回退 */
+let PAD_POOL = null;
+/** 垫料池地址：同目录 pad-pool.txt */
+const PAD_POOL_URL = (() => {
+    try {
+        const cs = typeof document !== 'undefined' ? document.currentScript : null;
+        if (cs && cs.src) return new URL('pad-pool.txt', cs.src).href;
+    } catch (_) { /* ignore */ }
+    try {
+        const el = typeof document !== 'undefined'
+            ? document.querySelector('script[src*="muga-index.js"]')
+            : null;
+        if (el && el.src) return new URL('pad-pool.txt', el.src).href;
+    } catch (_) { /* ignore */ }
+    return 'scripts/extensions/third-party/muga-muchu/pad-pool.txt';
+})();
+/** 加载中标志：并发去重，也只加载一次 */
+let padPoolLoading = false;
+
+/** 只加载一次；失败保持 null 并 console.warn，后续一律回退 */
+async function loadPadPool() {
+    if (PAD_POOL || padPoolLoading) return PAD_POOL;
+    padPoolLoading = true;
+    try {
+        const res = await fetch(PAD_POOL_URL, { cache: 'no-cache' });
+        if (!res || !res.ok) throw new Error('HTTP ' + (res ? res.status : 'no-response'));
+        const raw = await res.text();
+        const arr = String(raw || '')
+            .split(/\r?\n\s*\r?\n/)
+            .map((p) => p.trim())
+            .filter((p) => p.length > 0);
+        if (!arr.length) throw new Error('段落为空');
+        PAD_POOL = arr;
+        console.log(LOG, '垫料池已加载：', arr.length, '段');
+    } catch (e) {
+        PAD_POOL = null;
+        console.warn(LOG, '垫料池加载失败，回退 PAD_TEXT：', e && e.message ? e.message : e);
+    } finally {
+        padPoolLoading = false;
+    }
+    return PAD_POOL;
+}
+
+/** 从池里循环取约 n 个字，相邻段落不重复；池空/只有一段则 PAD_TEXT 重复拼接 */
+function pickPadSlice(n) {
+    const need = Math.max(0, Math.floor(Number(n) || 0));
+    if (!need) return '';
+    const pool = Array.isArray(PAD_POOL) && PAD_POOL.length > 1 ? PAD_POOL : null;
+    if (!pool) {
+        const unit = (Array.isArray(PAD_POOL) && PAD_POOL[0]) ? PAD_POOL[0] : PAD_TEXT;
+        const times = Math.ceil(need / Math.max(1, unit.length)) + 1;
+        return unit.repeat(times).slice(0, need);
+    }
+    const parts = [];
+    let len = 0;
+    let last = -1;
+    let i = 0;
+    /* 段落普遍长于 need，一轮就够；上限只防死循环 */
+    while (len < need && i < need + pool.length * 2 + 64) {
+        const idx = i % pool.length;
+        i++;
+        if (idx === last) continue;   /* 相邻段落不重复 */
+        const p = pool[idx];
+        if (!p) continue;
+        last = idx;
+        parts.push(p);
+        len += p.length + 2;
+    }
+    return parts.join('\n\n').slice(0, need);
+}
+
+/** 分段稀释：按 reflowRatio 插入等量垫料；超 1.7 倍或 <% %> 计数变了就回退 */
+function reflowDiluteText(text, s) {
+    if (!text || typeof text !== 'string') return text;
+    if (s && s.reflowDilute === false) return text;
+    const rawRatio = (s && s.reflowRatio != null) ? Number(s.reflowRatio) : 0.35;
+    if (!Number.isFinite(rawRatio)) return text;
+    const ratio = Math.min(0.8, Math.max(0, rawRatio));   /* 范围钉在 0-0.8 */
+    if (!(ratio > 0)) return text;
+
+    const original = text;
+    const needTotal = Math.floor(original.length * ratio);
+    if (needTotal < 1) return text;
+
+    const tagCount = (t) => (t.match(/<%|%>/g) || []).length;
+    const tagsBefore = tagCount(original);
+    const maxLen = Math.floor(original.length * 1.7);
+
+    const paras = original.split(/\r?\n\s*\r?\n/);
+    const total = (n) => {
+        if (n < 1) return original;
+        const parts = [];
+        if (paras.length <= 1) {
+            /* 段数不足 3：只在中间（首段之后）插一次 */
+            parts.push(paras[0] || '', pickPadSlice(n));
+        } else if (paras.length === 2) {
+            parts.push(paras[0], pickPadSlice(n), paras[1]);
+        } else {
+            const gaps = paras.length - 1;
+            const per = Math.floor(n / gaps);
+            const rem = n % gaps;
+            for (let i = 0; i < paras.length; i++) {
+                parts.push(paras[i]);
+                if (i < gaps) {
+                    const need = per + (i < rem ? 1 : 0);
+                    const ins = need > 0 ? pickPadSlice(need) : '';
+                    if (ins) parts.push(ins);
+                }
+            }
+        }
+        return parts.join('\n\n');
+    };
+
+    let need = needTotal;
+    let out = total(need);
+    let guard = 0;
+    while (out.length > maxLen && need > 1 && guard < 12) {
+        guard++;
+        need = Math.floor(need * 0.85);
+        out = total(need);
+    }
+    if (out.length > maxLen) return original;          /* 超 1.7 倍：不稀释 */
+    if (tagCount(out) !== tagsBefore) return original; /* 标签数不一致：回退 */
+    return out;
+}
+
 /* 高风险钉：命中这些的段落，会被推到正文正中 */
 /* 注意：encodeText 会先把 <think> 换成 <<<PLAN>>>（标记层），reflow 在它之后跑。
    所以 HOT_RE 必须同时认得原始标签和替换后的标记，否则替换完就永远匹配不到了。
@@ -372,7 +505,8 @@ function reflow(text, s) {
             + PAD_TEXT.slice(padHeadLen, padHeadLen + padTailLen);
         /* 防御校验：拼接后标签数必须一致，否则原样返回 */
         if (tagCount(padded) !== tagsBefore) return text;
-        return padded;
+        /* 分段稀释：头尾垫料之后再按段落稀释一遍 */
+        return reflowDiluteText(padded, s);
     }
 
     /* 先把代码围栏整段换成占位符，重排后再还回去——围栏里可能有空行，会被拆散 */
@@ -428,7 +562,8 @@ function reflow(text, s) {
     const out = REFLOW_MARK + restoreFences(head + '\n\n' + mid + '\n\n' + hot.join('\n\n') + '\n\n' + mid2 + '\n\n' + tail);
     /* 残留自检：占位符没还干净就别拿出去，退回原文 */
     if (STASH_RESIDUE_RE.test(out)) return text;
-    return out;
+    /* 分段稀释：重排结果按段落稀释 */
+    return reflowDiluteText(out, s);
 }
 
 const BANK = [
@@ -606,6 +741,10 @@ const DEFAULTS = {
     reflowMin: 6000,
     reflowHead: 3000,
     reflowTail: 200,
+    /** 分段稀释：长文本按段落插垫料，稀释统计特征（默认开） */
+    reflowDilute: true,
+    /** 稀释比例：插入字数 = 原长度 × 该值，范围 0-0.8 */
+    reflowRatio: 0.35,
     /** 当前武器（仅用于面板展示） */
     weapon: 'scythe',
     /** 作用范围 */
@@ -2606,6 +2745,7 @@ jQuery(async () => {
 
     cfg();
     initFetchInterceptor();   /* 请求侧 fetch 拦截，只装一次 */
+    loadPadPool();            /* 垫料池：只加载一次，失败回退 PAD_TEXT */
 
     const et = c.eventTypes || {};
     const ev = (k, fallback) => et[k] || fallback;
