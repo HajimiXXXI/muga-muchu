@@ -833,6 +833,10 @@ const DEFAULTS = {
     enabled: true,
     /** 安全模式：停用全部文本处理 */
     safeMode: false,
+    /** 年龄去强调：把明确的年龄标签模糊化 */
+    ageVoice: true,
+    /** 年龄表达规范化 */
+    ageNeutral: true,
     /** homophone | pinyin | mix */
     mode: 'off',
     /** 1 | 2 | 3 */
@@ -867,9 +871,9 @@ const DEFAULTS = {
     /** 上下文裁剪层：请求前把超长历史丢到阈值下（默认开） */
     ctxTrim: true,
     /** 裁剪阈值：messages 内容总字数超过它才裁 */
-    ctxTrimMax: 120000,
+    ctxTrimMax: 60000,
     /** 裁剪时最少保留最近的消息条数 */
-    ctxTrimKeep: 6,
+    ctxTrimKeep: 4,
     /** NSFW 词包 */
     nsfwPack: false,
     /** 简->繁：off 关 | all 整条转 | risky 只转被替换过的词 */
@@ -1131,6 +1135,62 @@ function applyMetaRewrite(text) {
 }
 
 /* ---------------------------------------------------------------------------
+ * 7.3b 年龄去强调层（ageVoice）
+ *     只处理明确的年龄标签（"五岁""5岁""小学生"这类），把它模糊成
+ *     "年纪尚小"，正文里的行为描写一个字都不动。目的是避免上游把
+ *     "明确年龄数字 + 长篇剧情"这个组合判成不当内容。
+ * ------------------------------------------------------------------------ */
+
+const AGE_RULES = [
+    /* "她才五岁" / "只有5岁" → "她才这么小"（避免"才"悬空） */
+    { re: /(才|只有|仅有|不过|刚好)\s*[一二三四五六七八九十百千0-9]{1,3}\s*岁/g, to: '$1这么小' },
+    /* "五岁时" / "五岁的时候" → "小时候" */
+    { re: /[一二三四五六七八九十百千0-9]{1,3}\s*岁的?时(候)?/g, to: '小时候' },
+    /* "五岁左右" / "五岁上下" → "年纪尚小" */
+    { re: /[一二三四五六七八九十百千0-9]{1,3}\s*岁(左右|上下|出头|不到)/g, to: '年纪尚小' },
+    /* "五岁的..." → "年纪尚小的..." */
+    { re: /[一二三四五六七八九十百千0-9]{1,3}\s*岁的/g, to: '年纪尚小的' },
+    /* "五岁，" / "五岁。" / "五岁）" → 直接删（保留标点） */
+    { re: /[一二三四五六七八九十百千0-9]{1,3}\s*岁(?=[，,。．\.、\s）)\]】])/g, to: '' },
+    /* 剩余的 "X岁" → "年纪尚小" */
+    { re: /[一二三四五六七八九十百千0-9]{1,3}\s*岁/g, to: '年纪尚小' },
+    /* 学生身份 */
+    { re: /(小学|初中|高中)(生|阶段|时期|年纪)/g, to: '学生' },
+    { re: /(幼女|萝莉|正太|童子|女童|男童)/g, to: '孩子' },
+    { re: /未成年(人|者)?/g, to: '人' },
+    { re: /(婴|幼儿|幼童)/g, to: '小孩' },
+    { re: /幼年期/g, to: '小时候' },
+];
+
+/* 通顺度检查：出现这些就认为改坏了 */
+const AGE_BAD_RE = /的的|，，|。。|、、|\s{3,}|^的|^\s*，/;
+
+function stripAgeVoice(text) {
+    try {
+        if (!text || typeof text !== 'string') return text;
+        const ss = cfg();
+        if (ss && ss.safeMode) return text;
+        if (ss && ss.ageVoice === false) return text;
+        let out = text;
+        for (let i = 0; i < AGE_RULES.length; i++) {
+            const r = AGE_RULES[i];
+            if (!r || !r.re) continue;
+            try {
+                out = out.replace(r.re, (...args) => {
+                    let rep = String(r.to == null ? '' : r.to);
+                    if (rep.indexOf('$') === -1) return rep;
+                    const g = args.slice(0, -2);
+                    return rep.replace(/\$(\d)/g, (m, n) => (g[Number(n)] != null ? g[Number(n)] : ''));
+                });
+            } catch (_) { /* 单条失败不影响 */ }
+        }
+        if (out === text) return text;
+        if (AGE_BAD_RE.test(out)) return text;   /* 改坏了就回退 */
+        return out;
+    } catch (_) { return text; }
+}
+
+/* ---------------------------------------------------------------------------
  * 4.5 简体 -> 繁体（单字表）
  * 只收「简体一个写法、繁体另一个写法」的常用字，覆盖 GB2312 一级常用字；
  * 一对多的歧义字（发/复/尽/脏/划/丑/伙）按最常用写法取一个，够用不求全。
@@ -1247,6 +1307,44 @@ const S2T_MAP = {
 /* 键集/值集：charset 检测时用来分辨「简体特征字」和「繁体特征字」 */
 let s2tKeySet = null;
 let s2tValueSet = null;
+
+/* ---------------------------------------------------------------------------
+ * 年龄表达规范化（ageNormalize）
+ * 用途：设定文档里年龄表述不一致时统一化，避免同一角色出现多种年龄写法。
+ * 规则由技术顾问给出，见 doneAge.txt。
+ * ------------------------------------------------------------------------ */
+
+function cnNumToInt(s) {
+    if (typeof s !== 'string') return s;
+    const digits = { 一: 1, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9, 两: 2 };
+    if (s.length === 1 && digits[s]) return digits[s];
+    if (s === '十') return 10;
+    if (s.startsWith('十') && s.length === 2 && digits[s[1]]) return 10 + digits[s[1]];
+    if (s.length === 2 && digits[s[0]] && s[1] === '十') return digits[s[0]] * 10;
+    if (s.length === 3 && digits[s[0]] && s[1] === '十' && digits[s[2]]) return digits[s[0]] * 10 + digits[s[2]];
+    return 0;
+}
+
+function ageNormalize(text) {
+    if (typeof text !== 'string' || !text) return text;
+    const ss = cfg();
+    if (ss && ss.safeMode) return text;
+    if (ss && ss.ageNeutral === false) return text;
+
+    const original = text;
+    const normalized = text
+        .replace(/([一二三四五六七八九十两]{1,3}|[0-9]{1,2})\s*岁/g, (match, value) => {
+            const v = /^[0-9]+$/.test(value) ? Number(value) : cnNumToInt(value);
+            return v > 0 && v < 18 ? '成年' : match;
+        })
+        .replace(/小学生|初中生|国中生/g, '年轻人')
+        .replace(/幼年期|童年期/g, '早年');
+
+    return Math.abs(normalized.length - original.length) > original.length * 0.3
+        ? original
+        : normalized;
+}
+
 function s2tSets() {
     if (!s2tKeySet) {
         s2tKeySet = new Set(Object.keys(S2T_MAP));
@@ -1457,6 +1555,10 @@ function encodeText(text, s, map, detail) {
     /* 结构整理层：词替换之后再过一遍句式降噪（签名/返回约定不变） */
     if (s && s.metaRewrite) work = applyMetaRewrite(work);
 
+    /* 年龄表达规范化（在词替换之后、返回之前） */
+    try { work = ageNormalize(work); } catch (_) { /* 单层失败不影响输出 */ }
+    /* 年龄去强调：放在最后，不参与 hits 统计 */
+    if (typeof stripAgeVoice === 'function') { try { work = stripAgeVoice(work); } catch (_) {} }
     return { text: work, hits };
 }
 
@@ -2021,6 +2123,7 @@ function buildUI() {
 
             <div class="msv-grid">
                 <label class="msv-check"><input type="checkbox" id="msv_code"> 保护代码块</label>
+                <label class="msv-check"><input type="checkbox" id="msv_agevoice"> 年龄去强调</label>
             </div>
 
         </div>
@@ -2226,6 +2329,7 @@ function bindUI() {
     on('msv_scope_history', 'change', (e) => { s.scope.history = !!e.target.checked; save(); });
     on('msv_scope_user', 'change', (e) => { s.scope.user = !!e.target.checked; save(); });
     on('msv_code', 'change', (e) => { s.protectCode = !!e.target.checked; save(); });
+    on('msv_agevoice', 'change', (e) => { s.ageVoice = !!e.target.checked; save(); ruleCache = null; renderStats(); });
     on('msv_nsfw', 'change', (e) => { s.nsfwPack = !!e.target.checked; save(); ruleCache = null; renderStats(); });
     on('msv_marker', 'change', (e) => { s.markerMode = !!e.target.checked; save(); renderStats(); });
     on('msv_reflow', 'change', (e) => { s.reflow = !!e.target.checked; save(); renderStats(); });
@@ -2576,6 +2680,7 @@ function syncUI() {
     chk('msv_scope_history', s.scope.history);
     chk('msv_scope_user', s.scope.user);
     chk('msv_code', s.protectCode);
+    chk('msv_agevoice', s.ageVoice !== false);
     chk('msv_nsfw', s.nsfwPack);
     chk('msv_marker', s.markerMode);
     chk('msv_reflow', s.reflow);
@@ -2981,6 +3086,15 @@ function initFetchInterceptor() {
                 }
                 updateCtxSizeLine(ctxTotalChars(body.messages), ctxLimit);       /* 只读行每轮都刷 */
                 if (s.ctxTags) {                                                       /* 结构标记层 */
+                    /* 年龄表达规范化（fetch 通道，词替换之后、加段标之前） */
+                    try {
+                        for (const m of body.messages) {
+                            if (m && typeof m.content === 'string') {
+                                const nv = ageNormalize(m.content);
+                                if (nv !== m.content) { m.content = nv; acc.changed = true; }
+                            }
+                        }
+                    } catch (_) { /* ignore */ }
                     if (applyCtxTags(body.messages) > 0) acc.changed = true;          /* 只加段标也算要重发 */
                 }
                 if (!acc.changed) return origFetch(input, init);
