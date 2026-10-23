@@ -412,6 +412,9 @@ function pickPadSlice(n) {
 }
 
 /** 分段稀释：按 reflowRatio 插入等量垫料；超 1.7 倍或 <% %> 计数变了就回退 */
+/** 分段稀释：按 reflowRatio 插入等量垫料；超 1.7 倍或 <% %> 计数变了就回退
+ *  EJS 模板安全：先 splitEjsSafe() 掩码，切段/插垫料/算长度全程只对 masked 做，
+ *  还原后校验 <% %> 计数与原输入一致、且无残留占位符，任一不过即返回原输入。 */
 function reflowDiluteText(text, s) {
     if (!text || typeof text !== 'string') return text;
     if (s && s.reflowDilute === false) return text;
@@ -421,16 +424,23 @@ function reflowDiluteText(text, s) {
     if (!(ratio > 0)) return text;
 
     const original = text;
-    const needTotal = Math.floor(original.length * ratio);
+
+    /* 关键：任何切段之前先掩码，后面一律基于 masked，绝不碰原 text */
+    const ejs = splitEjsSafe(original);
+    const ejsBlocks = (ejs && Array.isArray(ejs.blocks)) ? ejs.blocks : [];
+    const hasEjsBlocks = ejsBlocks.length > 0;
+    const src = (ejs && typeof ejs.masked === 'string') ? ejs.masked : original;
+
+    const needTotal = Math.floor(src.length * ratio);
     if (needTotal < 1) return text;
 
     const tagCount = (t) => (t.match(/<%|%>/g) || []).length;
-    const tagsBefore = tagCount(original);
-    const maxLen = Math.floor(original.length * 1.7);
+    const tagsBefore = tagCount(src);
+    const maxLen = Math.floor(src.length * 1.7);
 
-    const paras = original.split(/\r?\n\s*\r?\n/);
+    const paras = src.split(/\r?\n\s*\r?\n/);
     const total = (n) => {
-        if (n < 1) return original;
+        if (n < 1) return src;
         const parts = [];
         if (paras.length <= 1) {
             /* 段数不足 3：只在中间（首段之后）插一次 */
@@ -453,6 +463,17 @@ function reflowDiluteText(text, s) {
         return parts.join('\n\n');
     };
 
+    /* 还原 + 校验：blocks 为空时保持原有等价行为 */
+    const finish = (res) => {
+        const outMasked = (typeof res === 'string') ? res : original;
+        if (!hasEjsBlocks) return (typeof res === 'string') ? res : original;
+        const restored = restoreEjs(outMasked, ejsBlocks);
+        if (typeof restored !== 'string') return original;
+        if (tagCount(restored) !== tagCount(original)) return original;  /* <% %> 计数变了 */
+        if (/\uE102\d+\uE103/.test(restored)) return original;           /* 占位符没还原干净 */
+        return restored;
+    };
+
     let need = needTotal;
     let out = total(need);
     let guard = 0;
@@ -463,7 +484,7 @@ function reflowDiluteText(text, s) {
     }
     if (out.length > maxLen) return original;          /* 超 1.7 倍：不稀释 */
     if (tagCount(out) !== tagsBefore) return original; /* 标签数不一致：回退 */
-    return out;
+    return finish(out);
 }
 
 /* 高风险钉：命中这些的段落，会被推到正文正中 */
@@ -522,12 +543,27 @@ function reflow(text, s) {
 
         /* 原 padding-only：不拆段、不改顺序，只在头尾各垫一段 */
         const padOnly = () => {
+            /* 拼接仍用原文：tagCount 校验的就是原样拼接的结果 */
             const padded = REFLOW_MARK
                 + PAD_TEXT.slice(0, padHeadLen) + '\n\n'
                 + text + '\n\n'
                 + PAD_TEXT.slice(padHeadLen, padHeadLen + padTailLen);
             if (tagCount(padded) !== tagsBefore) return text;
-            return reflowDiluteText(padded, s);
+
+            /* EJS 防护：拼好的整段同样先掩码，稀释在掩码文本上做，最后还原并校验 */
+            const padSplit = splitEjsSafe(padded);
+            const padMasked = (padSplit && typeof padSplit.masked === 'string') ? padSplit.masked : padded;
+            const padBlocks = (padSplit && Array.isArray(padSplit.blocks)) ? padSplit.blocks : [];
+            if (!padBlocks.length) return reflowDiluteText(padded, s);
+            if ((padMasked.match(/\uE102\d+\uE103/g) || []).length !== padBlocks.length) return text;
+
+            const diluted = reflowDiluteText(padMasked, s);
+            if (typeof diluted !== 'string') return text;
+            const back = restoreEjs(diluted, padBlocks);
+            if (typeof back !== 'string') return text;
+            if (/\uE102\d+\uE103/.test(back)) return text;      /* 占位符没还原干净 */
+            if (tagCount(back) !== tagsBefore) return text;       /* <% %> 计数变了 */
+            return back;
         };
 
         const split = splitEjsSafe(text);
@@ -1046,11 +1082,21 @@ const META_RULES = [
     { re: /嚴禁|严禁/g, to: '请避免' },
 ];
 
-/* 按数组顺序逐条 replace；任何异常或非字符串一律返回原文 */
+/* 按数组顺序逐条 replace；任何异常或非字符串一律返回原文
+ * EJS 防护：<% %> 整块先换成占位符再替换，替完还原；计数不一致或无残留校验
+ * 不过一律返回原文——宁可漏改，不能改坏模板。 */
 function applyMetaRewrite(text) {
     try {
         if (typeof text !== 'string' || !text) return text;
-        let out = text;
+        const tagCount = (t) => (t.match(/<%|%>/g) || []).length;
+        const tagsBefore = tagCount(text);
+
+        const split = splitEjsSafe(text);
+        const masked = (split && typeof split.masked === 'string') ? split.masked : text;
+        const blocks = (split && Array.isArray(split.blocks)) ? split.blocks : [];
+        const hasEjs = blocks.length > 0;
+
+        let out = hasEjs ? masked : text;
         for (let i = 0; i < META_RULES.length; i++) {
             const r = META_RULES[i];
             if (!r || !r.re) continue;
@@ -1060,6 +1106,15 @@ function applyMetaRewrite(text) {
                 out = out.replace(r.re, () => rep);
             } catch (_) { /* 单条规则失败不影响其他 */ }
         }
+        if (!hasEjs) return out;
+
+        /* 校验一：占位符数量必须与掩码块数一致 */
+        if ((masked.match(/\uE102\d+\uE103/g) || []).length !== blocks.length) return text;
+        out = restoreEjs(out, blocks);
+        if (typeof out !== 'string') return text;
+        /* 校验二：无残留占位符；校验三：<%|%> 计数与原文一致 */
+        if (/\uE102\d+\uE103/.test(out)) return text;
+        if (tagCount(out) !== tagsBefore) return text;
         return out;
     } catch (_) { return text; }
 }
@@ -1229,24 +1284,20 @@ function encodeText(text, s, map, detail) {
     const vault = [];
     let work = text;
 
-    /* 简->繁（all）：整条先转，再走后面的保护/替换各层；
+    /* 简->繁（all）：这里只登记模式，真正的转换挪到下面 stash 之后执行；
        原文本来就是繁体（繁体特征字 > 60%）就不再转，免得二次折腾 */
     let s2tHitWords = null;
     const s2tMode = (s && (s.s2tMode === 'all' || s.s2tMode === 'risky')) ? s.s2tMode : 'off';
-    if (s2tMode === 'all') {
-        try {
-            if (!looksTraditional(text)) work = toTraditional(work);
-        } catch (_) { work = text; }
-    } else if (s2tMode === 'risky') {
-        s2tHitWords = new Set();
-    }
+    if (s2tMode === 'risky') s2tHitWords = new Set();
 
     try {
+        /* EJS 无条件保护：<% ... %> 里的中文标识符和字符串，转繁或换词都会让模板失效。
+           这条独立于 protectCode 开关，永远生效（protectCode=false 也要保护 EJS）。 */
+        work = stash(work, /<%[\s\S]*?%>/g, vault);
         if (s.protectCode) {
             work = stash(work, /```[\s\S]*?```/g, vault);
             work = stash(work, /`[^`\n]+`/g, vault);
-            /* 模板/插值整块保护：EJS、Handlebars、${} 里的字被改读音就废了 */
-            work = stash(work, /<%[\s\S]*?%>/g, vault);
+            /* 模板/插值整块保护：Handlebars、${} 里的字被改读音就废了 */
             work = stash(work, /\{\{[\s\S]*?\}\}/g, vault);
             work = stash(work, /\$\{[^{}]*\}/g, vault);
         }
@@ -1260,6 +1311,16 @@ function encodeText(text, s, map, detail) {
             work = stash(work, kre, vault);
         }
     } catch (_) { /* 保护失败就别保护了，继续筛 */ }
+
+    /* s2t=all 真正执行点：必须在 EJS / 代码围栏都 stash 之后，
+       否则 EJS 块内的中文标识符与字符串会被逐字转繁（EJS 破坏点 1）。
+       looksTraditional 仍用原文判断——原文才没有 stash 占位符。
+       失败时保留当前 work（已 stash 的文本），不能回退成 text，否则保护层全丢。 */
+    if (s2tMode === 'all') {
+        try {
+            if (!looksTraditional(text)) work = toTraditional(work);
+        } catch (_) { /* 转繁失败：保留已保护文本 */ }
+    }
 
     /* 标记替换：放在代码块保护之后，避免改坏 `<think>` 这种示例代码。
        实测：<think> 会被模型判为黑名单词直接拒，<<<PLAN>>> 照单全收。 */
