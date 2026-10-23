@@ -99,9 +99,23 @@ function escapeRe(s) {
     return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-const STASH_OPEN = '\uE000';
-const STASH_CLOSE = '\uE001';
+/* 占位符码位刻意避开 \uE000-\uE002 区段：ST-Prompt-Template 等插件在用那一带 */
+const STASH_OPEN = '\uE0F0';
+const STASH_CLOSE = '\uE0F1';
 const STASH_RE = new RegExp(STASH_OPEN + '(\\d+)' + STASH_CLOSE, 'g');
+const STASH_RESIDUE_RE = /[\uE0F0\uE0F1]/;
+
+/* 私用区守卫：我们只占 \uE0F0/\uE0F1（stash）、\uE100-\uE103（reflow 围栏/EJS）、\uE200（重排标记）。
+   除这几个之外还有 PUA 字符，说明别的插件已经往这段文本里塞了占位符，
+   我们再改写就会把它的占位符吃掉或串味，一律原样放行。 */
+const PUA_RE = /[\uE000-\uF8FF]/;
+const PUA_OWN_RE = /[\uE0F0\uE0F1\uE100-\uE103\uE200]/g;
+
+function hasForeignPua(text) {
+    if (!text || typeof text !== 'string') return false;
+    if (!PUA_RE.test(text)) return false;
+    return PUA_RE.test(text.replace(PUA_OWN_RE, ''));
+}
 
 function stash(str, re, vault) {
     return str.replace(re, (m) => {
@@ -336,6 +350,8 @@ const REFLOW_MARK = '\uE200';
 
 function reflow(text, s) {
     if (!text || typeof text !== 'string') return text;
+    /* 已有别家插件的 PUA 占位符：一律不动 */
+    if (text && hasForeignPua(text)) return text;
 
     /* EJS 模板守卫：正文里带 <% %> 说明这是模板文件，重排会拆散标签——降级为只垫料不重排 */
     const hasEjs = /<%[\s\S]*?%>/.test(text) || /<%[=\-]?/.test(text);
@@ -409,7 +425,10 @@ function reflow(text, s) {
     const mid = cold.slice(0, cut).join('\n\n');
     const mid2 = cold.slice(cut).join('\n\n');
 
-    return REFLOW_MARK + restoreFences(head + '\n\n' + mid + '\n\n' + hot.join('\n\n') + '\n\n' + mid2 + '\n\n' + tail);
+    const out = REFLOW_MARK + restoreFences(head + '\n\n' + mid + '\n\n' + hot.join('\n\n') + '\n\n' + mid2 + '\n\n' + tail);
+    /* 残留自检：占位符没还干净就别拿出去，退回原文 */
+    if (STASH_RESIDUE_RE.test(out)) return text;
+    return out;
 }
 
 const BANK = [
@@ -466,6 +485,105 @@ const BANK = [
     { id: 'nsfw.rutou', src: '乳头', alt: ['汝头'], pinyin: 'ru tou', tier: 2, pack: 'nsfw' },
     { id: 'nsfw.yindao', src: '阴道', alt: ['音道'], pinyin: 'yin dao', tier: 2, pack: 'nsfw' },
     { id: 'nsfw.roubang', src: '肉棒', alt: ['肉邦'], pinyin: 'rou bang', tier: 2, pack: 'nsfw' },
+
+    /* ---- 文学创作误伤保护表（80 条） ---- */
+    /* ---- 近身战斗动作 ---- */
+    { id: 'zh.zhansha', src: '斩杀', alt: ['击倒', '击退'], tier: 1 },
+    { id: 'zh.jisha', src: '击杀', alt: ['制伏', '打败'], tier: 1 },
+    { id: 'zh.shasi', src: '杀死', alt: ['放倒', '解决掉'], tier: 2 },
+    { id: 'zh.kansha', src: '砍杀', alt: ['劈砍', '乱砍'], tier: 1 },
+    { id: 'zh.zhanshou', src: '斩首', alt: ['致命一击', '取首'], tier: 1 },
+    { id: 'zh.gehou', src: '割喉', alt: ['锁喉', '扼住咽喉'], tier: 1 },
+    { id: 'zh.cichuan', src: '刺穿', alt: ['洞穿', '穿透'], tier: 1 },
+    { id: 'zh.guanchuan', src: '贯穿', alt: ['穿过', '洞穿'], tier: 2 },
+    { id: 'zh.sisha', src: '厮杀', alt: ['缠斗', '交锋'], tier: 1 },
+    { id: 'zh.chandou', src: '缠斗', alt: ['交手', '近身扭打'], tier: 1 },
+    { id: 'zh.niuda', src: '扭打', alt: ['推搡', '撕扯'], tier: 2 },
+    { id: 'zh.xuezhan', src: '血战', alt: ['苦战', '鏖战'], tier: 1 },
+    { id: 'zh.tulu', src: '屠戮', alt: ['击溃', '横扫'], tier: 1 },
+
+    /* ---- 暴行 / 群体场景 ---- */
+    { id: 'zh.nuesha', src: '虐杀', alt: ['残害', '施暴'], tier: 1 },
+    { id: 'zh.miemen', src: '灭门', alt: ['满门遇害', '株连全家'], tier: 1 },
+    { id: 'zh.shayi', src: '杀意', alt: ['敌意', '冷意'], tier: 1 },
+    { id: 'zh.shaqi', src: '杀气', alt: ['威压', '压迫感'], tier: 1 },
+    { id: 'zh.bianda', src: '鞭打', alt: ['抽打', '责打'], tier: 1 },
+
+    /* ---- 伤势与血 ---- */
+    { id: 'zh.xueliurusu', src: '血流如注', alt: ['伤势极重', '伤口大开'], tier: 1 },
+    { id: 'zh.xueroumohu', src: '血肉模糊', alt: ['惨不忍睹', '伤痕处处'], tier: 1 },
+    { id: 'zh.biantilinshang', src: '遍体鳞伤', alt: ['伤痕累累', '满身是伤'], tier: 1 },
+    { id: 'zh.guzhe', src: '骨折', alt: ['骨裂', '骨骼错位'], tier: 1 },
+    { id: 'zh.duanzhi', src: '断肢', alt: ['肢体残缺', '伤及四肢'], tier: 1 },
+    { id: 'zh.neizang', src: '内脏', alt: ['腑脏', '体内器官'], tier: 2 },
+    { id: 'zh.shangkou', src: '伤口', alt: ['创口', '伤处'], tier: 3 },
+    { id: 'zh.liuxue', src: '流血', alt: ['挂彩', '受了伤'], tier: 2 },
+    { id: 'zh.zhixue', src: '止血', alt: ['封住伤处', '按住创口'], tier: 2 },
+    { id: 'zh.zhongshang', src: '重伤', alt: ['伤势严重', '伤得不轻'], tier: 2 },
+
+    /* ---- 危急 / 临终 ---- */
+    { id: 'zh.binsi', src: '濒死', alt: ['命在旦夕', '气息奄奄'], tier: 1 },
+    { id: 'zh.yanmi', src: '奄奄一息', alt: ['气若游丝', '气息微弱'], tier: 1 },
+    { id: 'zh.duanqi', src: '断气', alt: ['没了呼吸', '气息断绝'], tier: 1 },
+    { id: 'zh.yanqi', src: '咽气', alt: ['闭气', '气息断绝'], tier: 1 },
+    { id: 'zh.yiyan', src: '遗言', alt: ['临终之语', '最后的话'], tier: 1 },
+    { id: 'zh.miliu', src: '弥留', alt: ['临终', '将逝'], tier: 1 },
+
+    /* ---- 死亡观感 ---- */
+    { id: 'zh.siwang', src: '死亡', alt: ['离世', '身故'], tier: 2 },
+    { id: 'zh.shiti', src: '尸体', alt: ['遗骸', '躯壳'], tier: 2 },
+    { id: 'zh.xueji', src: '血迹', alt: ['暗红痕迹', '擦痕'], tier: 2 },
+    { id: 'zh.xuexing', src: '血腥', alt: ['腥甜之气', '铁锈味'], tier: 2 },
+    { id: 'zh.xianxue', src: '鲜血', alt: ['殷红', '腥红'], tier: 2 },
+    { id: 'zh.fenmu', src: '坟墓', alt: ['坟茔', '茔地'], tier: 2 },
+
+    /* ---- 武器：冷兵器 ---- */
+    { id: 'zh.changjian', src: '长剑', alt: ['长锋', '三尺青锋'], tier: 2 },
+    { id: 'zh.bishou', src: '匕首', alt: ['短刃', '尖刃'], tier: 2 },
+    { id: 'zh.changdao', src: '长刀', alt: ['横刀', '刀锋'], tier: 2 },
+    { id: 'zh.wandao', src: '弯刀', alt: ['弧刃', '曲刃'], tier: 2 },
+    { id: 'zh.jujian', src: '巨剑', alt: ['重剑', '阔刃'], tier: 1 },
+    { id: 'zh.changmao', src: '长矛', alt: ['长槊', '矛杆'], tier: 1 },
+    { id: 'zh.changqiang', src: '长枪', alt: ['长槊', '枪身'], tier: 1 },
+    { id: 'zh.gongnu', src: '弓弩', alt: ['强弓', '弩机'], tier: 1 },
+    { id: 'zh.jianshi', src: '箭矢', alt: ['箭羽', '飞羽'], tier: 1 },
+    { id: 'zh.anqi', src: '暗器', alt: ['袖箭', '飞镖'], tier: 1 },
+    { id: 'zh.dunpai', src: '盾牌', alt: ['掩体', '护盾'], tier: 2 },
+    { id: 'zh.hujia', src: '护甲', alt: ['甲胄', '软甲'], tier: 2 },
+
+    /* ---- 武器：火器与爆破 ---- */
+    { id: 'zh.huoqiang', src: '火枪', alt: ['火铳', '长铳'], tier: 1 },
+    { id: 'zh.zhayao', src: '炸药', alt: ['火药', '爆药'], tier: 1 },
+    { id: 'zh.shoulei', src: '手雷', alt: ['爆裂弹', '投掷弹'], tier: 1 },
+    { id: 'zh.zhadan', src: '炸弹', alt: ['爆裂物', '火药包'], tier: 1 },
+    { id: 'zh.duqi', src: '毒气', alt: ['瘴气', '毒雾'], tier: 1 },
+
+    /* ---- 药物 / 毒物 ---- */
+    { id: 'zh.duyao', src: '毒药', alt: ['秘药', '药剂'], tier: 1 },
+    { id: 'zh.xiadu', src: '下毒', alt: ['暗中投药', '动了手脚'], tier: 1 },
+    { id: 'zh.dusha', src: '毒杀', alt: ['药倒', '用毒'], tier: 1 },
+    { id: 'zh.miyao', src: '迷药', alt: ['迷香', '安神散'], tier: 1 },
+    { id: 'zh.mayao', src: '麻药', alt: ['麻沸散', '镇痛散'], tier: 1 },
+    { id: 'zh.judu', src: '剧毒', alt: ['奇毒', '烈毒'], tier: 1 },
+    { id: 'zh.xingfenji', src: '兴奋剂', alt: ['提神剂', '亢奋药'], tier: 1 },
+    { id: 'zh.zhenjingji', src: '镇静剂', alt: ['安神剂', '镇定药'], tier: 1 },
+    { id: 'zh.zhitongyao', src: '止痛药', alt: ['镇痛散', '止痛散'], tier: 2 },
+    { id: 'zh.jiedu', src: '解毒', alt: ['清毒', '去毒'], tier: 2 },
+
+    /* ---- 情绪激烈 / 身体反应 ---- */
+    { id: 'zh.kongju', src: '恐惧', alt: ['惊惧', '惶然'], tier: 3 },
+    { id: 'zh.jingkong', src: '惊恐', alt: ['骇然', '惊惶'], tier: 2 },
+    { id: 'zh.juewang', src: '绝望', alt: ['无望', '心灰'], tier: 2 },
+    { id: 'zh.bengkui', src: '崩溃', alt: ['支撑不住', '溃散'], tier: 3 },
+    { id: 'zh.fennu', src: '愤怒', alt: ['愤然', '恼火'], tier: 2 },
+    { id: 'zh.diankuang', src: '癫狂', alt: ['狂乱', '失态'], tier: 1 },
+    { id: 'zh.kuqi', src: '哭泣', alt: ['落泪', '抽噎'], tier: 3 },
+    { id: 'zh.jianjiao', src: '尖叫', alt: ['惊呼', '失声叫出'], tier: 2 },
+    { id: 'zh.canjiao', src: '惨叫', alt: ['痛呼', '哀鸣'], tier: 1 },
+    { id: 'zh.chanduo', src: '颤抖', alt: ['发抖', '打颤'], tier: 2 },
+    { id: 'zh.zhixi', src: '窒息', alt: ['喘不上气', '透不过气'], tier: 1 },
+    { id: 'zh.zhemo', src: '折磨', alt: ['煎熬', '磋磨'], tier: 2 },
+    { id: 'zh.qiasi', src: '掐死', alt: ['扼毙', '锁喉'], tier: 1 },
 ];
 
 /* ---------------------------------------------------------------------------
@@ -697,6 +815,8 @@ function sameCase(orig, rep) {
 
 function encodeText(text, s, map, detail) {
     if (!text || typeof text !== 'string') return { text, hits: 0 };
+    /* 已有别家插件的 PUA 占位符：一律不动，原样返回（保持 {text,hits} 返回约定） */
+    if (text && hasForeignPua(text)) return { text, hits: 0 };
 
     const vault = [];
     let work = text;
@@ -821,6 +941,10 @@ function encodeText(text, s, map, detail) {
     }
 
     work = unstash(work, vault);
+
+    /* 残留自检：还原后还带着我们自己的 stash 占位符 = unstash 漏了，宁可整段退回原文 */
+    if (STASH_RESIDUE_RE.test(work)) return { text, hits: 0 };
+
     return { text: work, hits };
 }
 
