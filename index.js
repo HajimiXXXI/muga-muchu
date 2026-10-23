@@ -336,16 +336,41 @@ const REFLOW_MARK = '\uE200';
 
 function reflow(text, s) {
     if (!text || typeof text !== 'string') return text;
+
+    /* EJS 模板守卫：正文里带 <% %> 说明这是模板文件，重排会拆散标签——降级为只垫料不重排 */
+    const hasEjs = /<%[\s\S]*?%>/.test(text) || /<%[=\-]?/.test(text);
     if (text.length < (s.reflowMin || 6000)) return text;
 
     /* 幂等：重排过的文本带 U+E200 前缀，直接放行，别叠第二层 */
     if (text.startsWith(REFLOW_MARK)) return text;
+
+    /* 含 EJS：padding-only——不拆段、不改顺序，原文一字不动，只在头尾各垫一段 */
+    if (hasEjs) {
+        const padHeadLen = s.reflowHead || 3000;
+        const padTailLen = s.reflowTail || 540;
+        const tagCount = (t) => (t.match(/<%|%>/g) || []).length;
+        const tagsBefore = tagCount(text);
+        const padded = REFLOW_MARK
+            + PAD_TEXT.slice(0, padHeadLen) + '\n\n'
+            + text + '\n\n'
+            + PAD_TEXT.slice(padHeadLen, padHeadLen + padTailLen);
+        /* 防御校验：拼接后标签数必须一致，否则原样返回 */
+        if (tagCount(padded) !== tagsBefore) return text;
+        return padded;
+    }
 
     /* 先把代码围栏整段换成占位符，重排后再还回去——围栏里可能有空行，会被拆散 */
     const fences = [];
     let work = text.replace(/```[\s\S]*?```/g, (m) => {
         fences.push(m);
         return '\uE100' + (fences.length - 1) + '\uE101';
+    });
+
+    /* EJS 块同样整块换成占位符：<% %> 里常有换行/空行，重排会把它拆成两段 */
+    const ejss = [];
+    work = work.replace(/<%[\s\S]*?%>/g, (m) => {
+        ejss.push(m);
+        return '\uE102' + (ejss.length - 1) + '\uE103';
     });
 
     const paras = work.split(/\r?\n\s*\r?\n/);
@@ -360,7 +385,9 @@ function reflow(text, s) {
     /* 敏感段太多说明到处都是，推中间也改变不了什么，反而打乱结构 */
     if (hot.length > paras.length * 0.5) return text;
 
-    const restoreFences = (out) => out.replace(/\uE100(\d+)\uE101/g, (_, i) => fences[Number(i)] ?? '');
+    const restoreFences = (out) => out
+        .replace(/\uE100(\d+)\uE101/g, (_, i) => fences[Number(i)] ?? '')
+        .replace(/\uE102(\d+)\uE103/g, (_, i) => ejss[Number(i)] ?? '');
 
     const headLen = s.reflowHead || 3000;
     const tailLen = s.reflowTail || 540;
@@ -678,6 +705,10 @@ function encodeText(text, s, map, detail) {
         if (s.protectCode) {
             work = stash(work, /```[\s\S]*?```/g, vault);
             work = stash(work, /`[^`\n]+`/g, vault);
+            /* 模板/插值整块保护：EJS、Handlebars、${} 里的字被改读音就废了 */
+            work = stash(work, /<%[\s\S]*?%>/g, vault);
+            work = stash(work, /\{\{[\s\S]*?\}\}/g, vault);
+            work = stash(work, /\$\{[^{}]*\}/g, vault);
         }
         if (s.tagMode === 'protect') {
             work = stash(work, /<\/?[A-Za-z][^>\n]{0,120}>/g, vault);
