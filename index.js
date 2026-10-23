@@ -618,6 +618,8 @@ const DEFAULTS = {
     fetchHook: true,
     /** 结构整理层：把「指令优先级操纵 / 强制语气」句式改写成平实说法（默认开） */
     metaRewrite: true,
+    /** 上下文结构标记层：给长消息套 <ctx:xxx> 段标（默认开） */
+    ctxTags: true,
     /** NSFW 词包 */
     nsfwPack: false,
     /** 简->繁：off 关 | all 整条转 | risky 只转被替换过的词 */
@@ -1342,6 +1344,9 @@ function onPromptReady(data) {
         }
     }
 
+    /* 结构标记层：词替换之后套段标（幂等，重复跑不会套第二层） */
+    if (s.ctxTags) applyCtxTags(chat);
+
     /* 输出侧还原表：合并而不是覆盖 —— 总结/quiet 这类旁路请求会重复触发这里，
        用覆盖法会把主生成的映射顶掉，还原就错位了 */
     let evicted = 0;
@@ -1805,6 +1810,7 @@ function buildUI() {
             <div class="msv-section">发送预览</div>
             <div class="msv-row">
                 <button id="msv_show_sent" class="menu_button">查看上次发送</button>
+                <button id="msv_copy_sent" class="menu_button">复制</button>
             </div>
             <pre id="msv_sent_preview" style="display:none"></pre>
 
@@ -2028,6 +2034,67 @@ function bindUI() {
         parts.push('—— 事件通道（onPromptReady 拿到的 chat）——\n' + (b || '本轮没拦截到请求'));
         out.style.display = 'block';
         out.textContent = parts.join('\n\n');
+    });
+
+    const buildSentText = () => {
+        const a = globalThis.__mugaLastSent;
+        const b = globalThis.__mugaLastSent2;
+        const parts = [];
+        parts.push('—— fetch 通道（改写后实际发送的 messages）——\n' + (a || '本轮没拦截到请求'));
+        parts.push('—— 事件通道（onPromptReady 拿到的 chat）——\n' + (b || '本轮没拦截到请求'));
+        return parts.join('\n\n');
+    };
+
+    on('msv_copy_sent', 'click', async () => {
+        const a = globalThis.__mugaLastSent;
+        const b = globalThis.__mugaLastSent2;
+        if (!a && !b) {
+            try { toastr?.warning?.('本轮没拦截到请求，没东西可复制喵'); } catch (_) { /* ignore */ }
+            return;
+        }
+        const text = buildSentText();
+        let ok = false;
+        try {
+            await navigator.clipboard.writeText(text);
+            ok = true;
+        } catch (_) {
+            ok = false;
+        }
+        if (!ok) {
+            try {
+                const ta = document.createElement('textarea');
+                ta.value = text;
+                ta.style.position = 'fixed';
+                ta.style.top = '-1000px';
+                ta.style.left = '-1000px';
+                ta.style.opacity = '0';
+                document.body.appendChild(ta);
+                ta.focus();
+                ta.select();
+                ta.setSelectionRange(0, ta.value.length);
+                ok = document.execCommand('copy');
+                document.body.removeChild(ta);
+            } catch (_) {
+                ok = false;
+            }
+        }
+        try {
+            if (ok) toastr?.success?.('已复制 ' + text.length + ' 字');
+            else toastr?.warning?.('复制失败，可点预览手动长按选择喵');
+        } catch (_) { /* ignore */ }
+    });
+
+    on('msv_sent_preview', 'click', () => {
+        const out = $el('msv_sent_preview');
+        if (!out) return;
+        try {
+            const range = document.createRange();
+            range.selectNodeContents(out);
+            const sel = window.getSelection();
+            if (!sel) return;
+            sel.removeAllRanges();
+            sel.addRange(range);
+        } catch (_) { /* ignore */ }
     });
 }
 
@@ -2355,6 +2422,91 @@ function encodeFetchBody(body, s, map, detail) {
     return acc;
 }
 
+/* ---------------------------------------------------------------------------
+ * 7.4 上下文结构标记层（ctxTags）
+ *
+ * 目的：长 prompt 里段落边界靠模型自己猜，容易把 world_rules 当口吻、把
+ * output_contract 当正文。这里给每条长消息套一层纯正向的结构段标：
+ *   <ctx:world_rules> … </ctx:world_rules>
+ * 只加正向提示，不删原文、不改语义；<%|%> 计数前后必须一致，否则整批回退。
+ * ------------------------------------------------------------------------ */
+
+const CTX_OPEN_RE = /^\s*<ctx:[a-z_]+>/;
+const CTX_NOTE = '\n\n<ctx:...> 为输入结构标记，不属于输出内容，请勿复述。';
+const CTX_NOTE_MARK = '为输入结构标记，不属于输出内容';
+
+/* role + 关键词 → 段标名 */
+function pickCtxTag(role, text, index) {
+    if (role === 'system') return 'ctx:system_meta';
+    const t = typeof text === 'string' ? text : '';
+    if (/规则|宇宙|法则|协议/.test(t)) return 'ctx:world_rules';
+    if (/角色设定|声部|外貌|扮演/.test(t)) return 'ctx:character_card';
+    if (/输出模式|字数|完整输出/.test(t)) return 'ctx:output_contract';
+    return 'ctx:user_input';
+}
+
+/* 单个字符串里的 <%|%> 数量 */
+function countCtxMarks(str) {
+    if (typeof str !== 'string' || !str) return 0;
+    return (str.split('<%|%>').length - 1);
+}
+
+/* messages 里所有 string content 的 <%|%> 总数 */
+function countMsgMarks(messages) {
+    let n = 0;
+    if (!Array.isArray(messages)) return 0;
+    for (const m of messages) {
+        if (m && typeof m === 'object') n += countCtxMarks(m.content);
+    }
+    return n;
+}
+
+/* 给 messages 套段标；返回实际被改动的消息条数（0 = 没动 / 已回退） */
+function applyCtxTags(messages) {
+    try {
+        if (!Array.isArray(messages) || !messages.length) return 0;
+        const before = countMsgMarks(messages);
+        const next = new Map();          /* msg → 新文本，先算后写，便于整批回退 */
+
+        for (let i = 0; i < messages.length; i++) {
+            const m = messages[i];
+            if (!m || typeof m !== 'object') continue;
+            const txt = m.content;
+            if (typeof txt !== 'string' || txt.length <= 200) continue;
+            if (CTX_OPEN_RE.test(txt)) continue;          /* 已经套过，别套第二层 */
+            const tag = pickCtxTag(m.role, txt, i);
+            next.set(m, '<' + tag + '>\n' + txt + '\n</' + tag + '>');
+        }
+
+        /* 第一条 system 末尾追加一句说明，全局只加一次 */
+        for (let i = 0; i < messages.length; i++) {
+            const m = messages[i];
+            if (!m || typeof m !== 'object' || m.role !== 'system') continue;
+            const cur = next.has(m) ? next.get(m) : m.content;
+            if (typeof cur === 'string' && cur && cur.indexOf(CTX_NOTE_MARK) === -1) {
+                next.set(m, cur + CTX_NOTE);
+            }
+            break;
+        }
+
+        if (!next.size) return 0;
+
+        /* 防御：处理前后 <%|%> 数量必须一致，不一致整批回退 */
+        let after = 0;
+        for (const m of messages) {
+            if (!m || typeof m !== 'object') continue;
+            after += countCtxMarks(next.has(m) ? next.get(m) : m.content);
+        }
+        if (after !== before) return 0;
+
+        let tagged = 0;
+        for (const [m, txt] of next) {
+            if (m.content !== txt) { m.content = txt; tagged++; }
+        }
+        return tagged;
+    } catch (_) { return 0; }
+}
+
 function initFetchInterceptor() {
     try {
         if (globalThis.__mugaFetchHooked) return;
@@ -2381,6 +2533,9 @@ function initFetchInterceptor() {
                 const map = new Map();
                 const detail = [];
                 const acc = encodeFetchBody(body, s, map, detail);                     /* (4) */
+                if (s.ctxTags) {                                                       /* 结构标记层 */
+                    if (applyCtxTags(body.messages) > 0) acc.changed = true;          /* 只加段标也算要重发 */
+                }
                 if (!acc.changed) return origFetch(input, init);
 
                 /* 调试：本轮实际发送的 messages 预览（fetch 通道） */
