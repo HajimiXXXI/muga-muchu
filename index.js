@@ -864,6 +864,12 @@ const DEFAULTS = {
     metaRewrite: true,
     /** 上下文结构标记层：给长消息套 <ctx:xxx> 段标（默认开） */
     ctxTags: true,
+    /** 上下文裁剪层：请求前把超长历史丢到阈值下（默认开） */
+    ctxTrim: true,
+    /** 裁剪阈值：messages 内容总字数超过它才裁 */
+    ctxTrimMax: 120000,
+    /** 裁剪时最少保留最近的消息条数 */
+    ctxTrimKeep: 6,
     /** NSFW 词包 */
     nsfwPack: false,
     /** 简->繁：off 关 | all 整条转 | risky 只转被替换过的词 */
@@ -2098,6 +2104,9 @@ function buildUI() {
                 </div>
             </div>
 
+            <div class="msv-section">上下文</div>
+            <div id="msv_ctx_size" class="msv-wline" style="opacity:.75;cursor:default">上下文：0 字符 / 上限 0</div>
+
             <div class="msv-section">发送预览</div>
             <div class="msv-row">
                 <button id="msv_show_sent" class="menu_button">查看上次发送</button>
@@ -2143,6 +2152,7 @@ function buildUI() {
     renderVerdict();
     renderStudio();
     renderRecipes();
+    updateCtxSizeLine(undefined, Number((cfg() || {}).ctxTrimMax) > 0 ? Number((cfg() || {}).ctxTrimMax) : 120000);
 }
 
 function bindUI() {
@@ -2826,6 +2836,113 @@ function applyCtxTags(messages) {
     } catch (_) { return 0; }
 }
 
+/* ---------------------------------------------------------------------------
+ * 7.4b 上下文裁剪层（ctxTrim）
+ *
+ * 目的：上下文越攒越长，渠道那头先炸。总字数超 ctxTrimMax 时，从数组最前面
+ * 开始丢非 system 消息，直到降到阈值下或剩余条数等于 ctxTrimKeep。
+ * 硬底线：最后一条 user 消息、最后两条消息、全部 system 一律不丢。
+ * 返回新数组（没裁就原样返回），裁剪账记在 lastCtxTrim。
+ * ------------------------------------------------------------------------ */
+
+let lastCtxTrim = { dropped: 0, chars: 0, before: 0, after: 0 };
+let lastCtxSize = { size: 0, limit: 0 };
+
+/* 单条消息的字数（只数 content 字符串） */
+function ctxMsgChars(m) {
+    if (!m || typeof m !== 'object') return 0;
+    const c = m.content;
+    if (typeof c === 'string') return c.length;
+    if (typeof c === 'number' || typeof c === 'boolean') return String(c).length;
+    return 0;
+}
+
+/* 一整组 messages 的总字数 */
+function ctxTotalChars(list) {
+    let n = 0;
+    if (!Array.isArray(list)) return 0;
+    for (const m of list) n += ctxMsgChars(m);
+    return n;
+}
+
+function trimContext(messages, s) {
+    const zero = { dropped: 0, chars: 0, before: 0, after: 0 };
+    lastCtxTrim = zero;
+    try {
+        if (!Array.isArray(messages) || !messages.length) return messages;
+        const ss = s || cfg();
+        if (!ss || ss.safeMode || !ss.ctxTrim) return messages;
+        const limit = Number(ss.ctxTrimMax) > 0 ? Number(ss.ctxTrimMax) : 120000;
+        const keep = Number(ss.ctxTrimKeep) >= 0 ? Math.floor(Number(ss.ctxTrimKeep)) : 6;
+        const n = messages.length;
+        const before = ctxTotalChars(messages);
+        if (before <= limit) {
+            lastCtxTrim = { dropped: 0, chars: 0, before, after: before };
+            return messages;
+        }
+
+        /* 硬底线下标：最后两条 + 最后一条 user + 全部 system */
+        const locked = new Set();
+        for (let i = Math.max(0, n - 2); i < n; i++) locked.add(i);
+        for (let i = n - 1; i >= 0; i--) {
+            const m = messages[i];
+            if (m && typeof m === 'object' && m.role === 'user') { locked.add(i); break; }
+        }
+
+        const drop = new Set();
+        let total = before;
+        for (let i = 0; i < n; i++) {
+            if (total <= limit) break;
+            if (n - drop.size <= keep) break;
+            if (locked.has(i)) continue;
+            const m = messages[i];
+            if (m && typeof m === 'object' && m.role === 'system') continue;
+            drop.add(i);
+            total -= ctxMsgChars(m);
+        }
+        if (!drop.size) {
+            lastCtxTrim = { dropped: 0, chars: 0, before, after: before };
+            return messages;
+        }
+
+        const out = [];
+        let chars = 0;
+        for (let i = 0; i < n; i++) {
+            if (drop.has(i)) { chars += ctxMsgChars(messages[i]); continue; }
+            out.push(messages[i]);
+        }
+        lastCtxTrim = { dropped: drop.size, chars, before, after: before - chars };
+        return out;
+    } catch (_) {
+        lastCtxTrim = zero;
+        return messages;
+    }
+}
+
+/* 只读行「上下文：N 字符 / 上限 M」 */
+function updateCtxSizeLine(size, limit) {
+    try {
+        if (typeof size === 'number') lastCtxSize.size = size;
+        if (typeof limit === 'number') lastCtxSize.limit = limit;
+        const el = $el('msv_ctx_size');
+        if (!el) return;
+        el.textContent = '上下文：' + lastCtxSize.size + ' 字符 / 上限 ' + lastCtxSize.limit;
+    } catch (_) { /* ignore */ }
+}
+
+/* 裁剪账：有 msvTrace 就记进去，没有就算了 */
+function traceCtxTrim(t, size, limit) {
+    try {
+        const tr = globalThis.msvTrace;
+        if (!tr || typeof tr !== 'object') return;
+        tr.ctxTrimDropped = (t && t.dropped) || 0;
+        tr.ctxTrimChars = (t && t.chars) || 0;
+        tr.ctxSize = size;
+        tr.ctxLimit = limit;
+        tr.ctxTrimAt = Date.now();
+    } catch (_) { /* ignore */ }
+}
+
 function initFetchInterceptor() {
     try {
         if (globalThis.__mugaFetchHooked) return;
@@ -2852,6 +2969,17 @@ function initFetchInterceptor() {
                 const map = new Map();
                 const detail = [];
                 const acc = encodeFetchBody(body, s, map, detail);                     /* (4) */
+                /* 上下文裁剪层：applyCtxTags 之前先裁，超阈值才动 */
+                const ctxLimit = Number(s.ctxTrimMax) > 0 ? Number(s.ctxTrimMax) : 120000;
+                if (s.ctxTrim) {
+                    const trimmed = trimContext(body.messages, s);
+                    if (Array.isArray(trimmed) && trimmed !== body.messages) {
+                        body.messages = trimmed;
+                        acc.changed = true;                                        /* 裁过就得重发 */
+                    }
+                    traceCtxTrim(lastCtxTrim, ctxTotalChars(body.messages), ctxLimit);
+                }
+                updateCtxSizeLine(ctxTotalChars(body.messages), ctxLimit);       /* 只读行每轮都刷 */
                 if (s.ctxTags) {                                                       /* 结构标记层 */
                     if (applyCtxTags(body.messages) > 0) acc.changed = true;          /* 只加段标也算要重发 */
                 }
