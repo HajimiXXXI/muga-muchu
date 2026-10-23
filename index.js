@@ -1830,6 +1830,17 @@ function buildUI() {
                 </select>
             </div>
 
+            <div class="msv-row">
+                <span class="msv-label">垫料稀释</span>
+                <select id="msv_dilute">
+                    <option value="0">关</option>
+                    <option value="0.2">轻度</option>
+                    <option value="0.35">中度（推荐）</option>
+                    <option value="0.5">重度</option>
+                    <option value="0.7">极重</option>
+                </select>
+            </div>
+
             <div class="msv-grid">
                 <label class="msv-check"><input type="checkbox" id="msv_marker"> 标记替换</label>
                 <label class="msv-check"><input type="checkbox" id="msv_reflow"> 阅卷层</label>
@@ -2057,6 +2068,7 @@ function bindUI() {
     on('msv_decode', 'change', (e) => { s.decodeOutput = !!e.target.checked; save(); });
     on('msv_mode', 'change', (e) => { s.mode = e.target.value; save(); ruleCache = null; renderStats(); });
     on('msv_intensity', 'change', (e) => { s.intensity = Number(e.target.value) || 2; save(); ruleCache = null; renderStats(); });
+    on('msv_dilute', 'change', (e) => { const v = Number(e.target.value); s.reflowDilute = v > 0; s.reflowRatio = v > 0 ? v : 0.35; save(); ruleCache = null; renderStats(); });
     on('msv_tagmode', 'change', (e) => { s.tagMode = e.target.value; save(); renderStats(); });
     on('msv_s2t', 'change', (e) => { s.s2tMode = e.target.value; save(); ruleCache = null; renderStats(); });
     on('msv_scope_system', 'change', (e) => { s.scope.system = !!e.target.checked; save(); });
@@ -2388,6 +2400,7 @@ function syncUI() {
     chk('msv_decode', s.decodeOutput);
     set('msv_mode', s.mode);
     set('msv_intensity', String(s.intensity));
+    set('msv_dilute', s.reflowDilute === false ? '0' : String(s.reflowRatio || 0.35));
     set('msv_tagmode', s.tagMode);
     set('msv_s2t', s.s2tMode || 'off');
     chk('msv_scope_system', s.scope.system);
